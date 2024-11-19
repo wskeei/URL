@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "网页访问限制器",
+  "version": "1.0",
+  "description": "限制访问特定网页的Chrome插件",
+  "permissions": [
+    "storage",
+    "webNavigation",
+    "tabs"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+} 
