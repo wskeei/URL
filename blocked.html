@@ -31,12 +31,30 @@
       color: #666;
       margin: 0;
     }
+
+    .focus-message {
+      color: #34c759;
+    }
   </style>
 </head>
 <body>
   <div class="message">
-    <h1>访问已被限制</h1>
-    <p>该网页已被设置为禁止访问。</p>
+    <h1 id="title">访问已被限制</h1>
+    <p id="description"></p>
   </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const isFocusMode = params.get('mode') === 'focus';
+    
+    document.getElementById('title').textContent = isFocusMode ? 
+      '专注模式进行中' : '访问已被限制';
+    
+    document.getElementById('description').textContent = isFocusMode ?
+      '当前处于专注时间，请专心工作或学习。' : '该网页已被设置为禁止访问。';
+    
+    if (isFocusMode) {
+      document.getElementById('title').classList.add('focus-message');
+    }
+  </script>
 </body>
 </html> 
