@@ -32,7 +32,11 @@ chrome.webNavigation.onBeforeNavigate.addListener(function(details) {
     }
     
     // 检查普通限制
-    if (blockedUrls.some(blockedUrl => url.href.includes(blockedUrl))) {
+    const isBlocked = blockedUrls.some(item => 
+      item.enabled && url.href.includes(item.url)
+    );
+    
+    if (isBlocked) {
       chrome.tabs.update(details.tabId, {
         url: 'blocked.html'
       });

@@ -28,8 +28,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (url) {
       chrome.storage.sync.get(['blockedUrls'], function(result) {
         const blockedUrls = result.blockedUrls || [];
-        if (!blockedUrls.includes(url)) {
-          blockedUrls.push(url);
+        if (!blockedUrls.some(item => item.url === url)) {
+          blockedUrls.push({
+            url: url,
+            enabled: true  // 默认启用
+          });
           chrome.storage.sync.set({ blockedUrls: blockedUrls }, function() {
             loadBlockedUrls();
             urlInput.value = '';
@@ -44,20 +47,45 @@ document.addEventListener('DOMContentLoaded', function() {
       const blockedUrls = result.blockedUrls || [];
       blockedList.innerHTML = '';
       
-      blockedUrls.forEach(function(url) {
+      blockedUrls.forEach(function(item) {
         const li = document.createElement('li');
         li.innerHTML = `
-          <span>${url}</span>
-          <button class="delete-btn" data-url="${url}">删除</button>
+          <div class="url-item">
+            <label class="switch">
+              <input type="checkbox" class="toggle-url" data-url="${item.url}" 
+                ${item.enabled ? 'checked' : ''}>
+              <span class="slider"></span>
+            </label>
+            <span class="url-text">${item.url}</span>
+            <button class="delete-btn" data-url="${item.url}">删除</button>
+          </div>
         `;
         blockedList.appendChild(li);
       });
 
-      // 添加删除按钮事件
+      // 添加开关事件监听
+      document.querySelectorAll('.toggle-url').forEach(toggle => {
+        toggle.addEventListener('change', function() {
+          const urlToToggle = this.getAttribute('data-url');
+          const isEnabled = this.checked;
+          
+          chrome.storage.sync.get(['blockedUrls'], function(result) {
+            const blockedUrls = result.blockedUrls.map(item => {
+              if (item.url === urlToToggle) {
+                return { ...item, enabled: isEnabled };
+              }
+              return item;
+            });
+            chrome.storage.sync.set({ blockedUrls: blockedUrls });
+          });
+        });
+      });
+
+      // 删除按钮事件
       document.querySelectorAll('.delete-btn').forEach(button => {
         button.addEventListener('click', function() {
           const urlToDelete = this.getAttribute('data-url');
-          const newBlockedUrls = blockedUrls.filter(url => url !== urlToDelete);
+          const newBlockedUrls = blockedUrls.filter(item => item.url !== urlToDelete);
           chrome.storage.sync.set({ blockedUrls: newBlockedUrls }, function() {
             loadBlockedUrls();
           });
