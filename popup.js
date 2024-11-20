@@ -44,50 +44,66 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function loadBlockedUrls() {
     chrome.storage.sync.get(['blockedUrls'], function(result) {
-      const blockedUrls = result.blockedUrls || [];
-      blockedList.innerHTML = '';
+      // 清理无效的URL数据
+      let blockedUrls = result.blockedUrls || [];
       
-      blockedUrls.forEach(function(item) {
-        const li = document.createElement('li');
-        li.innerHTML = `
-          <div class="url-item">
-            <label class="switch">
-              <input type="checkbox" class="toggle-url" data-url="${item.url}" 
-                ${item.enabled ? 'checked' : ''}>
-              <span class="slider"></span>
-            </label>
-            <span class="url-text">${item.url}</span>
-            <button class="delete-btn" data-url="${item.url}">删除</button>
-          </div>
-        `;
-        blockedList.appendChild(li);
-      });
+      // 过滤掉无效的URL项
+      blockedUrls = blockedUrls.filter(item => 
+        item && 
+        typeof item === 'object' && 
+        item.url && 
+        typeof item.url === 'string'
+      );
 
-      // 添加开关事件监听
-      document.querySelectorAll('.toggle-url').forEach(toggle => {
-        toggle.addEventListener('change', function() {
-          const urlToToggle = this.getAttribute('data-url');
-          const isEnabled = this.checked;
-          
-          chrome.storage.sync.get(['blockedUrls'], function(result) {
-            const blockedUrls = result.blockedUrls.map(item => {
-              if (item.url === urlToToggle) {
-                return { ...item, enabled: isEnabled };
-              }
-              return item;
+      // 保存清理后的数据
+      chrome.storage.sync.set({ blockedUrls: blockedUrls }, () => {
+        // 更新显示
+        blockedList.innerHTML = '';
+        
+        blockedUrls.forEach(function(item) {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <div class="url-item">
+              <label class="switch">
+                <input type="checkbox" class="toggle-url" data-url="${item.url}" 
+                  ${item.enabled ? 'checked' : ''}>
+                <span class="slider"></span>
+              </label>
+              <span class="url-text">${item.url}</span>
+              <button class="delete-btn" data-url="${item.url}">删除</button>
+            </div>
+          `;
+          blockedList.appendChild(li);
+        });
+
+        // 添加开关事件监听
+        document.querySelectorAll('.toggle-url').forEach(toggle => {
+          toggle.addEventListener('change', function() {
+            const urlToToggle = this.getAttribute('data-url');
+            const isEnabled = this.checked;
+            
+            chrome.storage.sync.get(['blockedUrls'], function(result) {
+              const updatedUrls = result.blockedUrls.map(item => {
+                if (item.url === urlToToggle) {
+                  return { ...item, enabled: isEnabled };
+                }
+                return item;
+              });
+              chrome.storage.sync.set({ blockedUrls: updatedUrls });
             });
-            chrome.storage.sync.set({ blockedUrls: blockedUrls });
           });
         });
-      });
 
-      // 删除按钮事件
-      document.querySelectorAll('.delete-btn').forEach(button => {
-        button.addEventListener('click', function() {
-          const urlToDelete = this.getAttribute('data-url');
-          const newBlockedUrls = blockedUrls.filter(item => item.url !== urlToDelete);
-          chrome.storage.sync.set({ blockedUrls: newBlockedUrls }, function() {
-            loadBlockedUrls();
+        // 删除按钮事件
+        document.querySelectorAll('.delete-btn').forEach(button => {
+          button.addEventListener('click', function() {
+            const urlToDelete = this.getAttribute('data-url');
+            chrome.storage.sync.get(['blockedUrls'], function(result) {
+              const newBlockedUrls = result.blockedUrls.filter(item => item.url !== urlToDelete);
+              chrome.storage.sync.set({ blockedUrls: newBlockedUrls }, function() {
+                loadBlockedUrls();
+              });
+            });
           });
         });
       });
@@ -123,14 +139,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 加载URL选择框
+  // 修改加载URL选择框的函数
   function loadUrlCheckboxes() {
     chrome.storage.sync.get(['blockedUrls'], function(result) {
       const blockedUrls = result.blockedUrls || [];
-      urlCheckboxes.innerHTML = blockedUrls.map(url => `
+      urlCheckboxes.innerHTML = blockedUrls.map(item => `
         <label class="url-checkbox">
-          <input type="checkbox" value="${url}">
-          ${url}
+          <input type="checkbox" value="${item.url}">
+          ${item.url}
         </label>
       `).join('');
     });
@@ -167,4 +183,21 @@ document.addEventListener('DOMContentLoaded', function() {
   loadBlockedUrls();
   loadUrlCheckboxes();
   loadFocusStatus();
+
+  // 添加一个清理数据的函数
+  function cleanStorage() {
+    chrome.storage.sync.get(['blockedUrls'], function(result) {
+      let blockedUrls = result.blockedUrls || [];
+      blockedUrls = blockedUrls.filter(item => 
+        item && 
+        typeof item === 'object' && 
+        item.url && 
+        typeof item.url === 'string'
+      );
+      chrome.storage.sync.set({ blockedUrls: blockedUrls });
+    });
+  }
+
+  // 在页面加载时执行清理
+  cleanStorage();
 }); 
