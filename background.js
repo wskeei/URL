@@ -4,40 +4,59 @@ let focusMode = {
   blockedUrls: []
 };
 
-// 检查专注模式状态
-function checkFocusMode() {
-  if (focusMode.active && Date.now() >= focusMode.endTime) {
-    focusMode.active = false;
-    focusMode.blockedUrls = [];
-    chrome.storage.local.set({ focusMode: focusMode });
+// 检查URL是否应该被阻止的函数
+function shouldBlockUrl(url, callback) {
+  chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(data) {
+    const blockedUrls = data.blockedUrls || [];
+    const focusMode = data.focusMode || { active: false, urls: [], endTime: 0 };
+    
+    const shouldBlock = blockedUrls.some(item => 
+      item.enabled && url.includes(item.url)
+    ) || (
+      focusMode.active && 
+      Date.now() < focusMode.endTime && 
+      focusMode.urls.some(blockedUrl => url.includes(blockedUrl))
+    );
+
+    callback(shouldBlock);
+  });
+}
+
+// 阻止页面访问的函数
+function blockPage(tabId) {
+  const blockedPageUrl = chrome.runtime.getURL('blocked.html');
+  chrome.tabs.update(tabId, {
+    url: blockedPageUrl
+  });
+}
+
+// 检查并处理URL
+function checkAndBlockUrl(details) {
+  // 忽略blocked.html页面本身
+  if (details.url.includes(chrome.runtime.getURL('blocked.html'))) {
+    return;
+  }
+
+  // 检查是否是主框架的导航
+  if (details.frameId === 0) {
+    shouldBlockUrl(details.url, (shouldBlock) => {
+      if (shouldBlock) {
+        blockPage(details.tabId);
+      }
+    });
   }
 }
 
 // 监听导航事件
-chrome.webNavigation.onBeforeNavigate.addListener(function(details) {
-  // 检查是否是主框架的导航
-  if (details.frameId === 0) {
-    chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(data) {
-      const blockedUrls = data.blockedUrls || [];
-      const focusMode = data.focusMode || { active: false, urls: [], endTime: 0 };
-      
-      // 检查URL是否应该被阻止
-      const shouldBlock = blockedUrls.some(item => 
-        item.enabled && details.url.includes(item.url)
-      ) || (
-        focusMode.active && 
-        Date.now() < focusMode.endTime && 
-        focusMode.urls.some(url => details.url.includes(url))
-      );
+chrome.webNavigation.onBeforeNavigate.addListener(checkAndBlockUrl);
+chrome.webNavigation.onCommitted.addListener(checkAndBlockUrl);
 
+// 监听标签页更新事件
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url) {
+    shouldBlockUrl(tab.url, (shouldBlock) => {
       if (shouldBlock) {
-        // 使用chrome.runtime.getURL获取blocked.html的URL
-        const blockedPageUrl = chrome.runtime.getURL('blocked.html');
-        
-        // 重定向到阻止页面
-        chrome.tabs.update(details.tabId, {
-          url: blockedPageUrl
-        });
+        blockPage(tabId);
       }
     });
   }
