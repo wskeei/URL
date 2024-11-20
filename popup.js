@@ -218,6 +218,14 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  // 在DOMContentLoaded事件处理函数中添加
+const openStatsBtn = document.getElementById('openStats');
+openStatsBtn.addEventListener('click', function() {
+  chrome.tabs.create({
+    url: chrome.runtime.getURL('statistics.html')
+  });
+});
+
   // 在初始化部分添加
   loadBlockMessage();
 }); 

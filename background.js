@@ -4,6 +4,9 @@ let focusMode = {
   blockedUrls: []
 };
 
+// 记录访问开始时间的对象
+let visitStartTimes = {};
+
 // 检查URL是否应该被阻止的函数
 function shouldBlockUrl(url, callback) {
   chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(data) {
@@ -32,16 +35,23 @@ function blockPage(tabId) {
 
 // 检查并处理URL
 function checkAndBlockUrl(details) {
-  // 忽略blocked.html页面本身
   if (details.url.includes(chrome.runtime.getURL('blocked.html'))) {
     return;
   }
 
-  // 检查是否是主框架的导航
   if (details.frameId === 0) {
     shouldBlockUrl(details.url, (shouldBlock) => {
       if (shouldBlock) {
+        // 记录访问结束时间并保存统计数据
+        if (visitStartTimes[details.tabId]) {
+          const duration = (Date.now() - visitStartTimes[details.tabId]) / 1000; // 转换为秒
+          saveVisitStats(details.url, duration);
+          delete visitStartTimes[details.tabId];
+        }
         blockPage(details.tabId);
+      } else {
+        // 记录访问开始时间
+        visitStartTimes[details.tabId] = Date.now();
       }
     });
   }
@@ -95,5 +105,41 @@ chrome.storage.local.get(['focusMode'], function(result) {
   if (result.focusMode) {
     focusMode = result.focusMode;
     checkFocusMode();
+  }
+});
+
+// 保存访问统计数据
+function saveVisitStats(url, duration) {
+  chrome.storage.local.get(['visitStats'], function(result) {
+    const stats = result.visitStats || {};
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (!stats[url]) {
+      stats[url] = [];
+    }
+    
+    stats[url].push({
+      date: today,
+      duration: duration,
+      timestamp: Date.now()
+    });
+    
+    // 只保留最近90天的数据
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const cutoffDate = ninetyDaysAgo.toISOString().split('T')[0];
+    
+    Object.keys(stats).forEach(url => {
+      stats[url] = stats[url].filter(visit => visit.date >= cutoffDate);
+    });
+    
+    chrome.storage.local.set({ visitStats: stats });
+  });
+}
+
+// 添加标签页关闭事件监听
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (visitStartTimes[tabId]) {
+    delete visitStartTimes[tabId];
   }
 }); 

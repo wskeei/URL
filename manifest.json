@@ -15,7 +15,12 @@
     "service_worker": "background.js"
   },
   "web_accessible_resources": [{
-    "resources": ["blocked.html", "blocked.js"],
+    "resources": [
+      "blocked.html",
+      "blocked.js",
+      "statistics.html",
+      "statistics.js"
+    ],
     "matches": ["<all_urls>"]
   }]
 } 
