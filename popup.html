@@ -9,6 +9,7 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="block">网页限制</button>
       <button class="tab-btn" data-tab="focus">专注模式</button>
+      <button class="tab-btn" data-tab="settings">设置</button>
     </div>
 
     <div id="blockTab" class="tab-content active">
@@ -36,6 +37,17 @@
         </div>
         <div class="focus-status" id="focusStatus"></div>
         <button id="startFocus" class="focus-btn">开始专注</button>
+      </div>
+    </div>
+
+    <div id="settingsTab" class="tab-content">
+      <div class="settings-section">
+        <h3>提示文字设置</h3>
+        <div class="form-group">
+          <label for="blockMessage">设置阻止页面显示的文字：</label>
+          <textarea id="blockMessage" rows="3" placeholder="输入想要显示的提示文字..."></textarea>
+          <button id="saveMessage">保存设置</button>
+        </div>
       </div>
     </div>
   </div>

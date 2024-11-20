@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const startFocusBtn = document.getElementById('startFocus');
   const focusStatus = document.getElementById('focusStatus');
   const urlCheckboxes = document.getElementById('urlCheckboxes');
+  const blockMessage = document.getElementById('blockMessage');
+  const saveMessage = document.getElementById('saveMessage');
 
   // 标签切换
   tabBtns.forEach(btn => {
@@ -200,4 +202,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 在页面加载时执行清理
   cleanStorage();
+
+  // 加载已保存的消息
+  function loadBlockMessage() {
+    chrome.storage.sync.get(['blockMessage'], function(result) {
+      blockMessage.value = result.blockMessage || '这个网站已被限制访问。';
+    });
+  }
+
+  // 保存自定义消息
+  saveMessage.addEventListener('click', function() {
+    const message = blockMessage.value.trim();
+    chrome.storage.sync.set({ blockMessage: message }, function() {
+      alert('保存成功！');
+    });
+  });
+
+  // 在初始化部分添加
+  loadBlockMessage();
 }); 
