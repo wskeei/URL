@@ -4,7 +4,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const blockedList = document.getElementById('blockedList');
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabs = document.querySelectorAll('.tab-content');
-  const focusTimeInput = document.getElementById('focusTime');
+  const focusDaysInput = document.getElementById('focusDays');
+  const focusHoursInput = document.getElementById('focusHours');
+  const focusMinutesInput = document.getElementById('focusMinutes');
   const startFocusBtn = document.getElementById('startFocus');
   const focusStatus = document.getElementById('focusStatus');
   const urlCheckboxes = document.getElementById('urlCheckboxes');
@@ -156,9 +158,20 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 开始专注模式
   startFocusBtn.addEventListener('click', function() {
-    const duration = parseInt(focusTimeInput.value);
-    if (isNaN(duration) || duration <= 0 || duration > 180) {
-      alert('请输入1-180分钟之间的时间');
+    const days = parseInt(focusDaysInput.value) || 0;
+    const hours = parseInt(focusHoursInput.value) || 0;
+    const minutes = parseInt(focusMinutesInput.value) || 0;
+    
+    // 计算总分钟数
+    const totalMinutes = days * 24 * 60 + hours * 60 + minutes;
+    
+    if (totalMinutes <= 0) {
+      alert('请至少设置1分钟的专注时间');
+      return;
+    }
+    
+    if (totalMinutes > 20160) { // 14天的分钟数
+      alert('专注时间不能超过14天');
       return;
     }
 
@@ -172,7 +185,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     chrome.runtime.sendMessage({
       type: 'START_FOCUS',
-      duration: duration,
+      duration: totalMinutes,
       urls: selectedUrls
     }, response => {
       if (response.success) {
