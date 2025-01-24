@@ -129,14 +129,59 @@ li {
 .focus-settings {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .time-setting {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.time-setting h3 {
+  margin: 0;
+  color: #333;
   font-size: 14px;
+  font-weight: 500;
+}
+
+.time-inputs {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px;
+  background: #f5f5f7;
+  border-radius: 8px;
+}
+
+.time-inputs input[type="number"] {
+  width: 54px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: center;
+  background: white;
+}
+
+.time-inputs span {
+  color: #666;
+  font-size: 14px;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* 去除number输入框的上下箭头 */
+.time-inputs input[type="number"]::-webkit-inner-spin-button,
+.time-inputs input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.time-inputs input[type="number"]:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0,102,204,0.1);
 }
 
 /* 复选框容器 */
@@ -287,4 +332,34 @@ input:checked + .slider:before {
 .time-inputs input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;
   margin: 0;
+}
+
+.time-input-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: white;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.time-input-group input[type="number"] {
+  width: 40px;
+  border: none;
+  padding: 4px;
+  text-align: center;
+  font-size: 14px;
+  color: #333;
+  background: transparent;
+}
+
+.time-input-group span {
+  color: #666;
+  font-size: 14px;
+}
+
+.time-input-group:focus-within {
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0,102,204,0.1);
 } 
