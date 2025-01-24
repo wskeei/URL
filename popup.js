@@ -281,4 +281,65 @@ openStatsBtn.addEventListener('click', function() {
 
   // 在初始化部分添加
   loadBlockMessage();
+
+  // 字符计数功能
+  const charCount = document.querySelector('.char-count');
+  const MAX_CHARS = 200;
+
+  function updateCharCount() {
+    const count = blockMessage.value.length;
+    charCount.textContent = `${count}/${MAX_CHARS}`;
+    if (count > MAX_CHARS) {
+      charCount.style.color = '#ff3b30';
+    } else {
+      charCount.style.color = '#666';
+    }
+  }
+
+  blockMessage.addEventListener('input', updateCharCount);
+
+  // 主题切换功能
+  const themeOptions = document.querySelectorAll('input[name="theme"]');
+  
+  function setTheme(theme) {
+    document.body.classList.remove('theme-light', 'theme-dark');
+    document.body.classList.add(`theme-${theme}`);
+    chrome.storage.sync.set({ theme });
+  }
+
+  themeOptions.forEach(option => {
+    option.addEventListener('change', (e) => {
+      setTheme(e.target.value);
+    });
+  });
+
+  // 加载保存的主题
+  chrome.storage.sync.get(['theme'], function(result) {
+    const savedTheme = result.theme || 'light';
+    document.querySelector(`input[value="${savedTheme}"]`).checked = true;
+    setTheme(savedTheme);
+  });
+
+  // 保存设置时的动画效果
+  saveMessage.addEventListener('click', function() {
+    const message = blockMessage.value.trim();
+    if (message.length > MAX_CHARS) {
+      alert(`提示文字不能超过${MAX_CHARS}个字符`);
+      return;
+    }
+    
+    const originalText = this.innerHTML;
+    this.innerHTML = '<span class="save-icon">✓</span><span>已保存</span>';
+    this.style.background = '#34c759';
+    
+    chrome.storage.sync.set({ blockMessage: message }, () => {
+      setTimeout(() => {
+        this.innerHTML = originalText;
+        this.style.background = '';
+      }, 2000);
+    });
+  });
+
+  // 初始化字符计数
+  updateCharCount();
 }); 

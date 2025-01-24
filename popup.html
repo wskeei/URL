@@ -56,11 +56,52 @@
 
     <div id="settingsTab" class="tab-content">
       <div class="settings-section">
-        <h3>提示文字设置</h3>
-        <div class="form-group">
-          <label for="blockMessage">设置阻止页面显示的文字：</label>
-          <textarea id="blockMessage" rows="3" placeholder="输入想要显示的提示文字..."></textarea>
-          <button id="saveMessage">保存设置</button>
+        <div class="settings-header">
+          <h2>设置</h2>
+          <p class="settings-description">自定义你的网页限制体验</p>
+        </div>
+        
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <div class="settings-icon">✍️</div>
+            <h3>提示文字设置</h3>
+          </div>
+          <div class="form-group">
+            <label for="blockMessage">设置阻止页面显示的文字</label>
+            <div class="textarea-wrapper">
+              <textarea id="blockMessage" rows="3" placeholder="输入想要显示的提示文字..."></textarea>
+              <div class="textarea-footer">
+                <span class="char-count">0/200</span>
+              </div>
+            </div>
+            <button id="saveMessage" class="save-btn">
+              <span class="save-icon">💾</span>
+              <span>保存设置</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <div class="settings-icon">🎨</div>
+            <h3>主题设置</h3>
+          </div>
+          <div class="theme-selector">
+            <label class="theme-option">
+              <input type="radio" name="theme" value="light" checked>
+              <span class="theme-label">
+                <span class="theme-icon">☀️</span>
+                <span>浅色模式</span>
+              </span>
+            </label>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="dark">
+              <span class="theme-label">
+                <span class="theme-icon">🌙</span>
+                <span>深色模式</span>
+              </span>
+            </label>
+          </div>
         </div>
       </div>
     </div>
