@@ -142,29 +142,42 @@ document.addEventListener('DOMContentLoaded', function() {
         focusStatus.classList.add('active');
         startFocusBtn.disabled = true;
         
+        // 更新URL选择框状态
+        loadUrlCheckboxes();
+        
         if (remainingTime > 0) {
           setTimeout(loadFocusStatus, 1000);
         } else {
           focusStatus.classList.remove('active');
           startFocusBtn.disabled = false;
+          // 专注模式结束时也更新URL选择框状态
+          loadUrlCheckboxes();
         }
       } else {
         focusStatus.classList.remove('active');
         startFocusBtn.disabled = false;
+        // 确保非专注模式时也更新URL选择框状态
+        loadUrlCheckboxes();
       }
     });
   }
 
   // 修改加载URL选择框的函数
   function loadUrlCheckboxes() {
-    chrome.storage.sync.get(['blockedUrls'], function(result) {
+    chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(result) {
       const blockedUrls = result.blockedUrls || [];
-      urlCheckboxes.innerHTML = blockedUrls.map(item => `
-        <label class="url-checkbox">
-          <input type="checkbox" value="${item.url}">
-          ${item.url}
-        </label>
-      `).join('');
+      const focusMode = result.focusMode || { active: false, urls: [] };
+      
+      urlCheckboxes.innerHTML = blockedUrls.map(item => {
+        const isChecked = focusMode.active && focusMode.urls.includes(item.url);
+        return `
+          <label class="url-checkbox">
+            <input type="checkbox" value="${item.url}" ${isChecked ? 'checked' : ''} 
+              ${focusMode.active && isChecked ? 'disabled' : ''}>
+            <span class="url-label ${isChecked ? 'active-url' : ''}">${item.url}</span>
+          </label>
+        `;
+      }).join('');
     });
   }
 

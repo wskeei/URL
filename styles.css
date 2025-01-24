@@ -193,6 +193,7 @@ li {
   padding: 4px;
 }
 
+/* URL选择框样式 */
 .url-checkbox {
   display: flex;
   align-items: center;
@@ -200,6 +201,11 @@ li {
   gap: 8px;
   font-size: 14px;
   border-bottom: 1px solid #eee;
+  transition: background-color 0.2s;
+}
+
+.url-checkbox:hover {
+  background-color: #f5f5f7;
 }
 
 .url-checkbox:last-child {
@@ -208,6 +214,35 @@ li {
 
 .url-checkbox input[type="checkbox"] {
   margin: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.url-checkbox input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.url-label {
+  flex: 1;
+  color: #333;
+  transition: color 0.2s;
+}
+
+.url-label.active-url {
+  color: #0066cc;
+  font-weight: 500;
+}
+
+.url-checkbox:has(input:disabled) {
+  background-color: #f8f8f8;
+}
+
+.url-checkbox:has(input:disabled):hover {
+  background-color: #f8f8f8;
+  cursor: not-allowed;
 }
 
 /* 专注按钮 */
