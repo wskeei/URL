@@ -30,16 +30,28 @@ document.addEventListener('DOMContentLoaded', function() {
   addButton.addEventListener('click', function() {
     const url = urlInput.value.trim();
     if (url) {
-      chrome.storage.sync.get(['blockedUrls'], function(result) {
+      chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(result) {
         const blockedUrls = result.blockedUrls || [];
+        const focusMode = result.focusMode || { active: false };
+        
         if (!blockedUrls.some(item => item.url === url)) {
           blockedUrls.push({
             url: url,
-            enabled: true  // 默认启用
+            enabled: true
           });
+          
           chrome.storage.sync.set({ blockedUrls: blockedUrls }, function() {
             loadBlockedUrls();
+            loadUrlCheckboxes();
             urlInput.value = '';
+            
+            // 如果当前处于专注模式，将新添加的网址也加入到限制列表中
+            if (focusMode.active) {
+              chrome.runtime.sendMessage({
+                type: 'ADD_FOCUS_URL',
+                url: url
+              });
+            }
           });
         }
       });

@@ -98,6 +98,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  if (message.type === 'ADD_FOCUS_URL') {
+    chrome.storage.sync.get(['focusMode'], (result) => {
+      const focusMode = result.focusMode || { active: false, urls: [] };
+      if (focusMode.active && !focusMode.urls.includes(message.url)) {
+        focusMode.urls.push(message.url);
+        chrome.storage.sync.set({ focusMode }, () => {
+          // 立即检查所有标签页
+          chrome.tabs.query({}, (tabs) => {
+            tabs.forEach(tab => {
+              if (tab.url && tab.url.includes(message.url)) {
+                blockPage(tab.id);
+              }
+            });
+          });
+        });
+      }
+      sendResponse({ success: true });
+    });
+    return true;
+  }
 });
 
 // 初始化时恢复专注模式状态
