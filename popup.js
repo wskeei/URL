@@ -302,21 +302,41 @@ openStatsBtn.addEventListener('click', function() {
   const themeOptions = document.querySelectorAll('input[name="theme"]');
   
   function setTheme(theme) {
+    // 移除现有主题类
     document.body.classList.remove('theme-light', 'theme-dark');
+    // 添加新主题类
     document.body.classList.add(`theme-${theme}`);
-    chrome.storage.sync.set({ theme });
+    // 保存主题设置
+    chrome.storage.sync.set({ theme: theme }, () => {
+      // 同步更新到所有打开的插件页面
+      chrome.runtime.sendMessage({
+        type: 'THEME_CHANGED',
+        theme: theme
+      });
+    });
   }
 
+  // 监听主题切换
   themeOptions.forEach(option => {
     option.addEventListener('change', (e) => {
       setTheme(e.target.value);
+      // 添加切换动画
+      document.body.style.transition = 'background-color 0.3s, color 0.3s';
+      setTimeout(() => {
+        document.body.style.transition = '';
+      }, 300);
     });
   });
 
   // 加载保存的主题
   chrome.storage.sync.get(['theme'], function(result) {
     const savedTheme = result.theme || 'light';
-    document.querySelector(`input[value="${savedTheme}"]`).checked = true;
+    // 设置单选框状态
+    const themeInput = document.querySelector(`input[name="theme"][value="${savedTheme}"]`);
+    if (themeInput) {
+      themeInput.checked = true;
+    }
+    // 应用主题
     setTheme(savedTheme);
   });
 

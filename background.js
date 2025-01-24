@@ -119,6 +119,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     });
     return true;
   }
+
+  // 处理主题变更消息
+  if (message.type === 'THEME_CHANGED') {
+    // 广播主题变更消息到所有打开的插件页面
+    chrome.runtime.sendMessage({ 
+      type: 'APPLY_THEME',
+      theme: message.theme 
+    }).catch(() => {
+      // 忽略错误，因为可能没有其他页面在监听
+    });
+    return true;
+  }
 });
 
 // 初始化时恢复专注模式状态

@@ -1,22 +1,59 @@
+/* 主题变量 */
+:root {
+  --background-color: #ffffff;
+  --text-color: #333333;
+  --text-secondary: #666666;
+  --border-color: #dddddd;
+  --card-background: #ffffff;
+  --hover-background: #f5f5f7;
+  --primary-color: #0066cc;
+  --primary-hover: #0055b3;
+  --success-color: #34c759;
+  --danger-color: #ff3b30;
+  --input-background: #ffffff;
+  --shadow-color: rgba(0, 0, 0, 0.05);
+  --hover-shadow: rgba(0, 0, 0, 0.08);
+}
+
+body.theme-dark {
+  --background-color: #1c1c1e;
+  --text-color: #ffffff;
+  --text-secondary: #98989d;
+  --border-color: #2c2c2e;
+  --card-background: #2c2c2e;
+  --hover-background: #3a3a3c;
+  --primary-color: #0a84ff;
+  --primary-hover: #0071e3;
+  --success-color: #30d158;
+  --danger-color: #ff453a;
+  --input-background: #1c1c1e;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --hover-shadow: rgba(0, 0, 0, 0.4);
+}
+
+/* 应用主题变量 */
 body {
   width: 320px;
   padding: 16px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   margin: 0;
+  background-color: var(--background-color);
+  color: var(--text-color);
 }
 
 .container {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  background-color: var(--background-color);
 }
 
 /* 标签样式 */
 .tabs {
   display: flex;
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--border-color);
   margin: -16px -16px 0;
-  background: #fff;
+  background: var(--card-background);
 }
 
 .tab-btn {
@@ -24,15 +61,15 @@ body {
   padding: 12px 16px;
   background: none;
   border: none;
-  color: #666;
+  color: var(--text-secondary);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
 }
 
 .tab-btn.active {
-  color: #0066cc;
-  border-bottom: 2px solid #0066cc;
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color);
   font-weight: 500;
 }
 
@@ -49,14 +86,14 @@ body {
 /* 标题样式 */
 h2 {
   margin: 0 0 16px;
-  color: #333;
+  color: var(--text-color);
   font-size: 16px;
   font-weight: 500;
 }
 
 h3 {
   margin: 0 0 8px;
-  color: #666;
+  color: var(--text-color);
   font-size: 14px;
   font-weight: normal;
 }
@@ -69,12 +106,15 @@ h3 {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+textarea {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 14px;
+  background-color: var(--input-background);
+  color: var(--text-color);
 }
 
 input[type="number"] {
@@ -93,14 +133,14 @@ button {
 }
 
 .delete-btn {
-  background-color: #ff3b30;
+  background-color: var(--danger-color);
   color: white;
   padding: 4px 8px;
   font-size: 12px;
 }
 
 .delete-btn:hover {
-  background-color: #ff2d55;
+  background-color: var(--primary-hover);
 }
 
 /* URL列表 */
@@ -119,7 +159,7 @@ li {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background-color: #f5f5f5;
+  background-color: var(--hover-background);
   margin-bottom: 4px;
   border-radius: 6px;
   font-size: 14px;
@@ -140,7 +180,7 @@ li {
 
 .time-setting h3 {
   margin: 0;
-  color: #333;
+  color: var(--text-color);
   font-size: 14px;
   font-weight: 500;
 }
@@ -150,22 +190,23 @@ li {
   justify-content: space-between;
   gap: 12px;
   padding: 8px;
-  background: #f5f5f7;
+  background: var(--hover-background);
   border-radius: 8px;
 }
 
 .time-inputs input[type="number"] {
   width: 54px;
   padding: 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 14px;
   text-align: center;
-  background: white;
+  background: var(--input-background);
+  color: var(--text-color);
 }
 
 .time-inputs span {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 14px;
   min-width: 20px;
   text-align: center;
@@ -180,7 +221,7 @@ li {
 
 .time-inputs input[type="number"]:focus {
   outline: none;
-  border-color: #0066cc;
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(0,102,204,0.1);
 }
 
@@ -188,7 +229,7 @@ li {
 .checkbox-container {
   max-height: 150px;
   overflow-y: auto;
-  border: 1px solid #eee;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 4px;
 }
@@ -200,12 +241,12 @@ li {
   padding: 8px;
   gap: 8px;
   font-size: 14px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-color);
   transition: background-color 0.2s;
 }
 
 .url-checkbox:hover {
-  background-color: #f5f5f7;
+  background-color: var(--hover-background);
 }
 
 .url-checkbox:last-child {
@@ -227,21 +268,21 @@ li {
 
 .url-label {
   flex: 1;
-  color: #333;
+  color: var(--text-color);
   transition: color 0.2s;
 }
 
 .url-label.active-url {
-  color: #0066cc;
+  color: var(--primary-color);
   font-weight: 500;
 }
 
 .url-checkbox:has(input:disabled) {
-  background-color: #f8f8f8;
+  background-color: var(--hover-background);
 }
 
 .url-checkbox:has(input:disabled):hover {
-  background-color: #f8f8f8;
+  background-color: var(--hover-background);
   cursor: not-allowed;
 }
 
@@ -249,13 +290,13 @@ li {
 .focus-btn {
   width: 100%;
   padding: 12px;
-  background-color: #34c759;
+  background-color: var(--success-color);
   color: white;
   font-weight: 500;
 }
 
 .focus-btn:hover {
-  background-color: #30b753;
+  background-color: var(--primary-hover);
 }
 
 .focus-btn:disabled {
@@ -267,7 +308,7 @@ li {
 .focus-status {
   display: none;
   padding: 16px;
-  background-color: #f8f8f8;
+  background-color: var(--hover-background);
   border-radius: 8px;
   text-align: center;
 }
@@ -278,21 +319,21 @@ li {
 
 .focus-status p {
   margin: 8px 0;
-  color: #666;
+  color: var(--text-secondary);
 }
 
 .focus-status p:first-child {
-  color: #333;
+  color: var(--text-color);
   font-weight: 500;
 }
 
 .timer {
   font-size: 20px;
   font-weight: 600;
-  color: #0066cc;
+  color: var(--primary-color);
   margin: 12px 0;
   padding: 8px;
-  background: rgba(0, 102, 204, 0.1);
+  background: var(--hover-background);
   border-radius: 8px;
   display: inline-block;
   min-width: 120px;
@@ -350,7 +391,7 @@ li {
 }
 
 input:checked + .slider {
-  background-color: #34c759;
+  background-color: var(--success-color);
 }
 
 input:checked + .slider:before {
@@ -366,14 +407,16 @@ input:checked + .slider:before {
 .time-inputs input[type="number"] {
   width: 60px;
   padding: 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   font-size: 14px;
   text-align: center;
+  background: var(--input-background);
+  color: var(--text-color);
 }
 
 .time-inputs span {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
@@ -388,10 +431,10 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: white;
+  background: var(--input-background);
   padding: 4px 8px;
   border-radius: 6px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
 }
 
 .time-input-group input[type="number"] {
@@ -400,17 +443,17 @@ input:checked + .slider:before {
   padding: 4px;
   text-align: center;
   font-size: 14px;
-  color: #333;
+  color: var(--text-color);
   background: transparent;
 }
 
 .time-input-group span {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
 .time-input-group:focus-within {
-  border-color: #0066cc;
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(0,102,204,0.1);
 }
 
@@ -427,22 +470,22 @@ input:checked + .slider:before {
 }
 
 .settings-description {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 14px;
   margin: 4px 0 0;
 }
 
 .settings-card {
-  background: white;
+  background: var(--card-background);
   border-radius: 12px;
   padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px var(--shadow-color);
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .settings-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 12px var(--hover-shadow);
 }
 
 .settings-card-header {
@@ -459,7 +502,7 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f7;
+  background: var(--hover-background);
   border-radius: 10px;
 }
 
@@ -471,18 +514,20 @@ input:checked + .slider:before {
 textarea {
   width: 100%;
   padding: 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   font-size: 14px;
   line-height: 1.5;
   resize: vertical;
   transition: border-color 0.2s, box-shadow 0.2s;
   font-family: inherit;
+  background-color: var(--input-background);
+  color: var(--text-color);
 }
 
 textarea:focus {
   outline: none;
-  border-color: #0066cc;
+  border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
 }
 
@@ -493,7 +538,7 @@ textarea:focus {
 }
 
 .char-count {
-  color: #666;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -504,7 +549,7 @@ textarea:focus {
   gap: 8px;
   width: 100%;
   padding: 12px;
-  background: #0066cc;
+  background: var(--primary-color);
   color: white;
   border-radius: 8px;
   font-weight: 500;
@@ -512,7 +557,7 @@ textarea:focus {
 }
 
 .save-btn:hover {
-  background: #0055b3;
+  background: var(--primary-hover);
 }
 
 .save-btn:active {
@@ -544,9 +589,10 @@ textarea:focus {
   align-items: center;
   gap: 8px;
   padding: 12px;
-  background: #f5f5f7;
+  background: var(--hover-background);
   border-radius: 8px;
   transition: all 0.2s;
+  color: var(--text-color);
 }
 
 .theme-icon {
@@ -554,16 +600,16 @@ textarea:focus {
 }
 
 .theme-option input[type="radio"]:checked + .theme-label {
-  background: #0066cc;
+  background: var(--primary-color);
   color: white;
 }
 
 .theme-option:hover .theme-label {
-  background: #e5e5ea;
+  background: var(--hover-background);
 }
 
 .theme-option input[type="radio"]:checked:hover + .theme-label {
-  background: #0055b3;
+  background: var(--primary-hover);
 }
 
 /* 标签页切换动画 */
@@ -581,7 +627,7 @@ textarea:focus {
 /* 表单标签样式 */
 .form-group label {
   display: block;
-  color: #333;
+  color: var(--text-color);
   font-size: 14px;
   margin-bottom: 8px;
   font-weight: 500;
