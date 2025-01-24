@@ -266,9 +266,9 @@ li {
 /* 专注状态 */
 .focus-status {
   display: none;
-  padding: 12px;
+  padding: 16px;
   background-color: #f8f8f8;
-  border-radius: 6px;
+  border-radius: 8px;
   text-align: center;
 }
 
@@ -276,11 +276,26 @@ li {
   display: block;
 }
 
-.timer {
-  font-size: 24px;
-  font-weight: bold;
-  color: #0066cc;
+.focus-status p {
   margin: 8px 0;
+  color: #666;
+}
+
+.focus-status p:first-child {
+  color: #333;
+  font-weight: 500;
+}
+
+.timer {
+  font-size: 20px;
+  font-weight: 600;
+  color: #0066cc;
+  margin: 12px 0;
+  padding: 8px;
+  background: rgba(0, 102, 204, 0.1);
+  border-radius: 8px;
+  display: inline-block;
+  min-width: 120px;
 }
 
 .url-item {

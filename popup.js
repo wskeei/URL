@@ -131,12 +131,27 @@ document.addEventListener('DOMContentLoaded', function() {
     chrome.runtime.sendMessage({ type: 'GET_FOCUS_STATUS' }, response => {
       if (response.focusMode.active) {
         const remainingTime = Math.max(0, Math.floor((response.focusMode.endTime - Date.now()) / 1000));
-        const minutes = Math.floor(remainingTime / 60);
-        const seconds = remainingTime % 60;
+        let timeDisplay;
+
+        if (remainingTime >= 24 * 60 * 60) {  // 大于24小时
+          const days = Math.floor(remainingTime / (24 * 60 * 60));
+          const hours = Math.floor((remainingTime % (24 * 60 * 60)) / 3600);
+          const minutes = Math.floor((remainingTime % 3600) / 60);
+          timeDisplay = `${days}天 ${hours}时 ${minutes}分`;
+        } else if (remainingTime >= 3600) {  // 大于1小时
+          const hours = Math.floor(remainingTime / 3600);
+          const minutes = Math.floor((remainingTime % 3600) / 60);
+          const seconds = remainingTime % 60;
+          timeDisplay = `${hours}时 ${minutes}分 ${seconds.toString().padStart(2, '0')}秒`;
+        } else {  // 小于1小时
+          const minutes = Math.floor(remainingTime / 60);
+          const seconds = remainingTime % 60;
+          timeDisplay = `${minutes}分 ${seconds.toString().padStart(2, '0')}秒`;
+        }
         
         focusStatus.innerHTML = `
           <p>专注模式进行中</p>
-          <div class="timer">${minutes}:${seconds.toString().padStart(2, '0')}</div>
+          <div class="timer">${timeDisplay}</div>
           <p>请保持专注！</p>
         `;
         focusStatus.classList.add('active');
