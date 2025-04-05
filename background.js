@@ -6,10 +6,21 @@ let focusMode = {
 
 // 记录访问开始时间的对象
 let visitStartTimes = {};
+// --- Storage Keys ---
+const SETTINGS_KEY = 'extensionSettings'; // { disableCopy: bool, disableCopyLockExpiry: ts, strictMode: bool, strictModeLockExpiry: ts }
+const DAILY_USAGE_KEY = 'dailyTempAccessUsage'; // { "YYYY-MM-DD": { "url": true } }
+
+// --- Global Variables ---
 // 存储临时访问权限 { url: expiryTimestamp }
 let temporaryAccess = {};
 // 存储当前挑战 { url: { challenge: string, duration: number } }
-let currentChallenges = {}; // Changed structure to store duration with challenge
+let currentChallenges = {};
+
+// --- Utility Functions ---
+// 获取当天日期字符串 YYYY-MM-DD
+function getTodayDateString() {
+  return new Date().toISOString().split('T')[0];
+}
 
 // 生成随机挑战字符串 (accepts length parameter)
 function generateChallengeString(length) {
@@ -232,27 +243,117 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Clean up expired grants before sending status
     cleanupExpiredAccess();
     sendResponse({ temporaryAccess: temporaryAccess });
-    // No need to return true here as it's synchronous after cleanup
+    return false; // Synchronous response
   }
+
+  // 获取设置状态
+  if (message.type === 'GET_SETTINGS_STATUS') {
+    chrome.storage.sync.get([SETTINGS_KEY], (result) => {
+      const settings = result[SETTINGS_KEY] || {};
+      sendResponse({ settings });
+    });
+    return true; // Asynchronous response
+  }
+
+   // 更新设置
+   if (message.type === 'UPDATE_SETTING') {
+     const { settingName, value } = message;
+     chrome.storage.sync.get([SETTINGS_KEY], (result) => {
+       let settings = result[SETTINGS_KEY] || {};
+       const now = Date.now();
+       let lockExpiry = null;
+
+       if (value === true) { // Only set lock when enabling
+         lockExpiry = now + 24 * 60 * 60 * 1000; // Lock for 24 hours
+       }
+
+       if (settingName === 'disableCopy') {
+         settings.disableCopy = value;
+         settings.disableCopyLockExpiry = value ? lockExpiry : null;
+       } else if (settingName === 'strictMode') {
+         settings.strictMode = value;
+         settings.strictModeLockExpiry = value ? lockExpiry : null;
+         // If strict mode is being turned off, clear today's usage data? Optional, maybe better not to.
+       }
+
+       chrome.storage.sync.set({ [SETTINGS_KEY]: settings }, () => {
+         if (chrome.runtime.lastError) {
+           sendResponse({ success: false, error: chrome.runtime.lastError.message });
+         } else {
+           sendResponse({ success: true, settings }); // Send back updated settings
+         }
+       });
+     });
+     return true; // Asynchronous response
+   }
+
+   // 检查严格模式下的每日使用情况 (Added for popup check before challenge)
+   if (message.type === 'CHECK_DAILY_USAGE') {
+     const today = getTodayDateString();
+     chrome.storage.local.get([DAILY_USAGE_KEY], (result) => {
+        const usageData = result[DAILY_USAGE_KEY] || {};
+        const todaysUsage = usageData[today] || {};
+        const usedToday = !!todaysUsage[message.url];
+        sendResponse({ usedToday });
+     });
+     return true; // Asynchronous response
+   }
+
 });
+
+// --- Background Tasks ---
 
 // Function to clean up expired temporary access grants
 function cleanupExpiredAccess() {
     const now = Date.now();
+    let changed = false;
     for (const url in temporaryAccess) {
         if (temporaryAccess[url] < now) {
             delete temporaryAccess[url];
+            changed = true;
         }
     }
-    // Schedule next cleanup (e.g., every 5 minutes)
-    setTimeout(cleanupExpiredAccess, 5 * 60 * 1000);
+    // Consider notifying popup if grants expired? Maybe not necessary.
 }
 
-// Initial cleanup call
-cleanupExpiredAccess();
+// Function to clear old daily usage data
+function clearOldUsageData() {
+  const today = getTodayDateString();
+  chrome.storage.local.get([DAILY_USAGE_KEY], (result) => {
+    const usageData = result[DAILY_USAGE_KEY] || {};
+    let updatedUsage = {};
+    // Keep only today's data
+    if (usageData[today]) {
+      updatedUsage[today] = usageData[today];
+    }
+    // Check if data actually changed before writing
+    if (JSON.stringify(usageData) !== JSON.stringify(updatedUsage)) {
+       chrome.storage.local.set({ [DAILY_USAGE_KEY]: updatedUsage }, () => {
+         console.log("Cleared old daily usage data.");
+       });
+    }
+  });
+}
 
-// 初始化时恢复专注模式状态
-chrome.storage.local.get(['focusMode'], function(result) {
+// Schedule periodic cleanup tasks
+function scheduleCleanups() {
+   cleanupExpiredAccess(); // Run immediately
+   clearOldUsageData();    // Run immediately
+
+   // Schedule next run (e.g., every 5 minutes for temp access, maybe less often for daily usage?)
+   setInterval(cleanupExpiredAccess, 5 * 60 * 1000);
+   // Consider running daily usage cleanup less often, e.g., hourly or on startup
+   setInterval(clearOldUsageData, 60 * 60 * 1000); // Check hourly
+}
+
+// Run cleanups on startup
+scheduleCleanups();
+
+
+// --- Initialization ---
+
+// Initialize focus mode state (assuming checkFocusMode exists elsewhere or is not needed)
+chrome.storage.sync.get(['focusMode'], function(result) { // Changed to sync storage based on popup.js
   if (result.focusMode) {
     focusMode = result.focusMode;
     checkFocusMode();
@@ -288,15 +389,72 @@ function saveVisitStats(url, duration) {
   });
 }
 
-// 添加标签页关闭事件监听
+// --- Event Listeners ---
+
+// (Web Navigation and Tab Update listeners remain the same)
+
+// Add listener for extension startup to clear old usage data
+chrome.runtime.onStartup.addListener(() => {
+  console.log("Extension started up, clearing old usage data.");
+  clearOldUsageData();
+});
+
+
+// Tab removal listener (remains the same)
 chrome.tabs.onRemoved.addListener((tabId) => {
   if (visitStartTimes[tabId]) {
-    // If a tab is closed while being tracked, record the duration
-    // This might be inaccurate if the user was idle, but better than losing the data
-    // const duration = (Date.now() - visitStartTimes[tabId]) / 1000;
-    // Need the URL associated with this tabId... this part is tricky.
-    // Let's skip saving stats on tab close for now to avoid complexity.
+    // Logic for saving stats on close is still complex, skipping for now.
     delete visitStartTimes[tabId];
   }
-  // No need to remove challenges by tabId anymore
+});
+
+
+// --- Strict Mode Logic Integration ---
+
+// Modify VERIFY_ACCESS_CODE to record usage if strict mode is on
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // ... other message handlers ...
+
+  if (message.type === 'VERIFY_ACCESS_CODE') {
+    const challengeData = currentChallenges[message.url];
+
+    if (challengeData && challengeData.challenge === message.code) {
+      const durationMinutes = challengeData.duration;
+      const expiry = Date.now() + durationMinutes * 60 * 1000;
+      temporaryAccess[message.url] = expiry;
+      delete currentChallenges[message.url];
+
+      // Check if strict mode is enabled and record usage
+      chrome.storage.sync.get([SETTINGS_KEY], (result) => {
+        const settings = result[SETTINGS_KEY] || {};
+        if (settings.strictMode) {
+          const today = getTodayDateString();
+          chrome.storage.local.get([DAILY_USAGE_KEY], (localResult) => {
+            let usageData = localResult[DAILY_USAGE_KEY] || {};
+            if (!usageData[today]) {
+              usageData[today] = {};
+            }
+            usageData[today][message.url] = true; // Mark as used today
+            chrome.storage.local.set({ [DAILY_USAGE_KEY]: usageData }, () => {
+               console.log(`Strict mode: Recorded usage for ${message.url} on ${today}`);
+               // Send response after potentially updating storage
+               sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes });
+            });
+          });
+        } else {
+           // Strict mode not enabled, send response immediately
+           sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes });
+        }
+      });
+      // Return true because the response might be sent asynchronously from storage callback
+      return true;
+
+    } else {
+      sendResponse({ success: false });
+      return false; // Synchronous response
+    }
+  }
+
+  // Ensure other handlers return true if async, false otherwise
+  // (Review previous handlers if necessary)
 });

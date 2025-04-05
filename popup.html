@@ -109,6 +109,36 @@
             </label>
           </div>
         </div>
+
+        <div class="settings-card">
+           <div class="settings-card-header">
+             <div class="settings-icon">✂️</div>
+             <h3>挑战码设置</h3>
+           </div>
+           <div class="form-group">
+             <label class="checkbox-label">
+               <input type="checkbox" id="disableCopyChallenge">
+               <span>禁止复制挑战码 (开启后锁定24小时)</span>
+             </label>
+             <div class="lock-info" id="disableCopyLockInfo"></div>
+           </div>
+         </div>
+
+        <div class="settings-card">
+           <div class="settings-card-header">
+             <div class="settings-icon">🛡️</div>
+             <h3>严格模式</h3>
+           </div>
+           <div class="form-group">
+             <label class="checkbox-label">
+               <input type="checkbox" id="enableStrictMode">
+               <span>启用严格模式 (开启后锁定24小时)</span>
+             </label>
+             <p class="setting-description">启用后，每个受限网址每天只能通过挑战码临时访问一次。</p>
+             <div class="lock-info" id="strictModeLockInfo"></div>
+           </div>
+         </div>
+
       </div>
     </div>
 

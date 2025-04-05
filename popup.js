@@ -25,11 +25,18 @@ document.addEventListener('DOMContentLoaded', function() {
   const modalStatusMessage = document.getElementById('modalStatusMessage');
   const tempAccessStatusContainer = document.getElementById('tempAccessStatusContainer');
   const tempAccessTimersList = document.getElementById('tempAccessTimersList');
-  const durationSelection = document.getElementById('durationSelection'); // New element
-  const durationOptions = document.querySelectorAll('input[name="tempAccessDuration"]'); // New element
+  const durationSelection = document.getElementById('durationSelection');
+  const durationOptions = document.querySelectorAll('input[name="tempAccessDuration"]');
+
+  // Settings elements
+  const disableCopyCheckbox = document.getElementById('disableCopyChallenge');
+  const disableCopyLockInfo = document.getElementById('disableCopyLockInfo');
+  const enableStrictModeCheckbox = document.getElementById('enableStrictMode');
+  const strictModeLockInfo = document.getElementById('strictModeLockInfo');
 
   let tempAccessTimerInterval = null; // To store the interval ID
-  let selectedDuration = 20; // Default duration if needed, though selection is now required
+  let currentSettings = {}; // To store loaded settings
+  let selectedDuration = 20; // Default duration
   let selectedChallengeLength = 30; // Default length corresponding to 20 mins
 
   // 标签切换
@@ -328,11 +335,133 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 初始化
+  // --- Settings Logic ---
+
+  function formatLockTime(expiryTimestamp) {
+    if (!expiryTimestamp || expiryTimestamp <= Date.now()) {
+      return '';
+    }
+    const date = new Date(expiryTimestamp);
+    // Use options for clarity, especially year/month/day
+    const options = { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+    return `锁定至 ${date.toLocaleString('zh-CN', options)}`;
+  }
+
+
+  function loadSettings() {
+    chrome.runtime.sendMessage({ type: 'GET_SETTINGS_STATUS' }, (response) => {
+      if (chrome.runtime.lastError || !response || !response.settings) {
+        console.error("Error loading settings:", chrome.runtime.lastError || "No response");
+        return;
+      }
+      currentSettings = response.settings;
+      const now = Date.now();
+
+      // Disable Copy Setting
+      const disableCopyLocked = currentSettings.disableCopyLockExpiry && currentSettings.disableCopyLockExpiry > now;
+      disableCopyCheckbox.checked = !!currentSettings.disableCopy;
+      disableCopyCheckbox.disabled = disableCopyLocked;
+      disableCopyLockInfo.textContent = disableCopyLocked ? formatLockTime(currentSettings.disableCopyLockExpiry) : '';
+      applyCopyPrevention(); // Apply based on loaded setting
+
+      // Strict Mode Setting
+      const strictModeLocked = currentSettings.strictModeLockExpiry && currentSettings.strictModeLockExpiry > now;
+      enableStrictModeCheckbox.checked = !!currentSettings.strictMode;
+      enableStrictModeCheckbox.disabled = strictModeLocked;
+      strictModeLockInfo.textContent = strictModeLocked ? formatLockTime(currentSettings.strictModeLockExpiry) : '';
+    });
+  }
+
+  function handleSettingChange(checkbox, settingName, lockInfoElement) {
+     const newValue = checkbox.checked;
+     // Use the locally stored settings to check current lock status first
+     const lockExpiry = currentSettings[`${settingName}LockExpiry`];
+     const now = Date.now();
+
+     if (lockExpiry && lockExpiry > now) {
+       // Should be disabled, but double-check
+       checkbox.checked = !newValue; // Revert UI
+       alert(`此设置已锁定，将于 ${formatLockTime(lockExpiry)} 解锁。`);
+       return;
+     }
+
+     // Confirm enabling (as it locks for 24h)
+     if (newValue === true) {
+        if (!confirm(`确定要启用此设置吗？启用后将锁定24小时无法关闭。`)) {
+            checkbox.checked = false; // Revert UI
+            return;
+        }
+     }
+
+     // Disable checkbox immediately while saving
+     checkbox.disabled = true;
+     lockInfoElement.textContent = '正在保存...';
+
+     chrome.runtime.sendMessage({ type: 'UPDATE_SETTING', settingName: settingName, value: newValue }, (response) => {
+       if (chrome.runtime.lastError || !response || !response.success) {
+         console.error("Error saving setting:", chrome.runtime.lastError || response?.error);
+         alert('保存设置失败，请重试。');
+         // Revert UI on failure and re-enable
+         checkbox.checked = !newValue;
+         checkbox.disabled = false;
+         lockInfoElement.textContent = ''; // Clear saving message
+         loadSettings(); // Reload settings to be sure
+       } else {
+         // Success, update local state and UI from response
+         currentSettings = response.settings; // Update local cache
+         const newLockExpiry = currentSettings[`${settingName}LockExpiry`];
+         const isLocked = newLockExpiry && newLockExpiry > Date.now();
+
+         checkbox.disabled = isLocked; // Set disabled state based on lock
+         lockInfoElement.textContent = isLocked ? formatLockTime(newLockExpiry) : '';
+
+         // Apply copy prevention immediately if changed
+         if (settingName === 'disableCopy') {
+            applyCopyPrevention();
+         }
+       }
+     });
+  }
+
+  disableCopyCheckbox.addEventListener('change', () => {
+      handleSettingChange(disableCopyCheckbox, 'disableCopy', disableCopyLockInfo);
+  });
+
+  enableStrictModeCheckbox.addEventListener('change', () => {
+      handleSettingChange(enableStrictModeCheckbox, 'strictMode', strictModeLockInfo);
+  });
+
+  // Apply copy prevention to challenge input
+  function applyCopyPrevention() {
+      const inputField = modalChallengeInput; // Target the correct input
+      if (currentSettings.disableCopy) {
+          inputField.oncopy = (e) => { e.preventDefault(); return false; };
+          inputField.oncut = (e) => { e.preventDefault(); return false; };
+          inputField.onpaste = (e) => { e.preventDefault(); return false; };
+          // Using CSS is generally preferred for visual indication if needed
+          inputField.style.userSelect = 'none';
+          inputField.style.webkitUserSelect = 'none'; /* Safari */
+          inputField.style.msUserSelect = 'none'; /* IE 10+ */
+          // Make it obvious copying is disabled
+          inputField.title = '复制功能已禁用';
+      } else {
+          inputField.oncopy = null;
+          inputField.oncut = null;
+          inputField.onpaste = null;
+          inputField.style.userSelect = 'auto';
+          inputField.style.webkitUserSelect = 'auto';
+          inputField.style.msUserSelect = 'auto';
+          inputField.title = ''; // Clear tooltip
+      }
+  }
+
+
+  // --- Initialization ---
   loadBlockedUrls();
   loadUrlCheckboxes();
   loadFocusStatus();
   updateTempAccessTimers(); // Initial call to load timers
+  loadSettings(); // Load settings on popup open
 
   // 添加一个清理数据的函数
   function cleanStorage() {
@@ -467,23 +596,46 @@ openStatsBtn.addEventListener('click', function() {
     modalSubmitChallenge.disabled = true;
     durationSelection.style.display = 'none'; // Hide duration options initially
 
-    // Fetch both focus blocked URLs and current temp access status
+    // Fetch necessary data: focus URLs, temp access status, and current settings
     Promise.all([
-      new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_FOCUS_BLOCKED_URLS' }, resolve)),
-      new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_TEMP_ACCESS_STATUS' }, resolve))
-    ]).then(([focusResponse, statusResponse]) => {
+      new Promise((resolve, reject) => chrome.runtime.sendMessage({ type: 'GET_FOCUS_BLOCKED_URLS' }, response => chrome.runtime.lastError ? reject(chrome.runtime.lastError) : resolve(response))),
+      new Promise((resolve, reject) => chrome.runtime.sendMessage({ type: 'GET_TEMP_ACCESS_STATUS' }, response => chrome.runtime.lastError ? reject(chrome.runtime.lastError) : resolve(response))),
+      new Promise((resolve, reject) => chrome.runtime.sendMessage({ type: 'GET_SETTINGS_STATUS' }, response => chrome.runtime.lastError ? reject(chrome.runtime.lastError) : resolve(response)))
+    ]).then(([focusResponse, statusResponse, settingsResponse]) => {
       const focusUrls = (focusResponse && focusResponse.urls) ? focusResponse.urls : [];
       const activeGrants = (statusResponse && statusResponse.temporaryAccess) ? statusResponse.temporaryAccess : {};
+      currentSettings = (settingsResponse && settingsResponse.settings) ? settingsResponse.settings : {}; // Update local settings cache
       const now = Date.now();
 
       // Filter out URLs that have active grants
-      const availableUrls = focusUrls.filter(url => {
+      let availableUrls = focusUrls.filter(url => {
         const expiry = activeGrants[url];
-        return !(expiry && expiry > now); // Keep if no expiry or expiry is in the past
+        return !(expiry && expiry > now);
       });
 
-      if (availableUrls.length > 0) {
-        availableUrls.forEach(url => {
+      // If strict mode is on, further filter based on daily usage (requires another async call)
+      if (currentSettings.strictMode && availableUrls.length > 0) {
+         Promise.all(availableUrls.map(url =>
+           new Promise((resolve) => chrome.runtime.sendMessage({ type: 'CHECK_DAILY_USAGE', url: url }, response => resolve({ url, usedToday: response?.usedToday })))
+         )).then(usageResults => {
+            availableUrls = usageResults.filter(result => !result.usedToday).map(result => result.url);
+            populateModalAndShow(availableUrls);
+         });
+      } else {
+         // Strict mode off or no URLs left after initial filter
+         populateModalAndShow(availableUrls);
+      }
+
+    }).catch(error => {
+       console.error("Error fetching initial modal data:", error);
+       alert('无法加载临时访问数据，请稍后再试。');
+    });
+  });
+
+  // Helper function to populate dropdown and show modal
+  function populateModalAndShow(urls) {
+      if (urls.length > 0) {
+        urls.forEach(url => {
           const option = document.createElement('option');
           option.value = url;
           option.textContent = url;
@@ -491,13 +643,9 @@ openStatsBtn.addEventListener('click', function() {
         });
         tempAccessModal.style.display = 'flex'; // Show modal
       } else {
-        alert('当前所有受限网址均已获得临时访问权限或没有受限网址。');
+        alert('当前没有可申请临时访问的受限网址（可能已用完今日次数或无受限网址）。');
       }
-    }).catch(error => {
-       console.error("Error fetching initial modal data:", error);
-       alert('无法加载临时访问数据，请稍后再试。');
-    });
-  });
+  }
 
   // Close Modal
   closeModalBtn.addEventListener('click', () => {
@@ -515,15 +663,6 @@ openStatsBtn.addEventListener('click', function() {
   tempAccessUrlSelect.addEventListener('change', () => {
     const selectedUrl = tempAccessUrlSelect.value;
     modalStatusMessage.textContent = ''; // Clear previous status
-    if (!selectedUrl) {
-      challengeSection.style.display = 'none';
-      return;
-    }
-
-    challengeSection.style.display = 'block';
-    modalChallengeString.textContent = '请求挑战码...';
-    modalChallengeInput.value = '';
-    modalStatusMessage.textContent = ''; // Clear previous status
     modalChallengeInput.value = '';
     challengeSection.style.display = 'none'; // Hide challenge until duration is picked
     modalSubmitChallenge.disabled = true;
@@ -532,11 +671,27 @@ openStatsBtn.addEventListener('click', function() {
       durationSelection.style.display = 'none'; // Hide duration options if no URL selected
       return;
     }
-    // Show duration options
-    durationSelection.style.display = 'block';
-    // Reset duration selection visually (optional, could default to first)
-    durationOptions.forEach(radio => radio.checked = false);
 
+    // If strict mode is enabled, check daily usage *again* right before showing duration
+    // (This is a safety check in case the status changed between opening modal and selecting URL)
+    if (currentSettings.strictMode) {
+        chrome.runtime.sendMessage({ type: 'CHECK_DAILY_USAGE', url: selectedUrl }, (response) => {
+            if (response && response.usedToday) {
+                alert(`严格模式：您今天已使用过 ${selectedUrl} 的临时访问权限。`);
+                // Reset selection? Or just hide duration?
+                tempAccessUrlSelect.value = ''; // Reset dropdown
+                durationSelection.style.display = 'none';
+            } else {
+                // Usage OK, show duration options
+                durationSelection.style.display = 'block';
+                durationOptions.forEach(radio => radio.checked = false); // Reset radio buttons
+            }
+        });
+    } else {
+        // Strict mode not enabled, just show duration options
+        durationSelection.style.display = 'block';
+        durationOptions.forEach(radio => radio.checked = false); // Reset radio buttons
+    }
   });
 
   // Handle Duration selection in modal
@@ -610,7 +765,9 @@ openStatsBtn.addEventListener('click', function() {
          modalStatusMessage.className = 'status-message error';
          modalSubmitChallenge.disabled = false;
       } else if (response.success) {
-        modalStatusMessage.textContent = '验证成功！您现在可以访问该网站20分钟。';
+        // Use the actual granted duration from the response
+        const grantedMinutes = response.grantedDuration || selectedDuration; // Fallback just in case
+        modalStatusMessage.textContent = `验证成功！您现在可以访问该网站 ${grantedMinutes} 分钟。`;
         modalStatusMessage.className = 'status-message success';
         updateTempAccessTimers(); // Update timers immediately after granting access
         // Optionally close modal after a delay
