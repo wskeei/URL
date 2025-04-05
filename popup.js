@@ -25,8 +25,12 @@ document.addEventListener('DOMContentLoaded', function() {
   const modalStatusMessage = document.getElementById('modalStatusMessage');
   const tempAccessStatusContainer = document.getElementById('tempAccessStatusContainer');
   const tempAccessTimersList = document.getElementById('tempAccessTimersList');
+  const durationSelection = document.getElementById('durationSelection'); // New element
+  const durationOptions = document.querySelectorAll('input[name="tempAccessDuration"]'); // New element
 
   let tempAccessTimerInterval = null; // To store the interval ID
+  let selectedDuration = 20; // Default duration if needed, though selection is now required
+  let selectedChallengeLength = 30; // Default length corresponding to 20 mins
 
   // 标签切换
   tabBtns.forEach(btn => {
@@ -461,20 +465,37 @@ openStatsBtn.addEventListener('click', function() {
     modalChallengeInput.value = '';
     modalStatusMessage.textContent = '';
     modalSubmitChallenge.disabled = true;
+    durationSelection.style.display = 'none'; // Hide duration options initially
 
-    // Fetch currently focus-blocked URLs
-    chrome.runtime.sendMessage({ type: 'GET_FOCUS_BLOCKED_URLS' }, (response) => {
-      if (response && response.urls && response.urls.length > 0) {
-        response.urls.forEach(url => {
+    // Fetch both focus blocked URLs and current temp access status
+    Promise.all([
+      new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_FOCUS_BLOCKED_URLS' }, resolve)),
+      new Promise(resolve => chrome.runtime.sendMessage({ type: 'GET_TEMP_ACCESS_STATUS' }, resolve))
+    ]).then(([focusResponse, statusResponse]) => {
+      const focusUrls = (focusResponse && focusResponse.urls) ? focusResponse.urls : [];
+      const activeGrants = (statusResponse && statusResponse.temporaryAccess) ? statusResponse.temporaryAccess : {};
+      const now = Date.now();
+
+      // Filter out URLs that have active grants
+      const availableUrls = focusUrls.filter(url => {
+        const expiry = activeGrants[url];
+        return !(expiry && expiry > now); // Keep if no expiry or expiry is in the past
+      });
+
+      if (availableUrls.length > 0) {
+        availableUrls.forEach(url => {
           const option = document.createElement('option');
           option.value = url;
           option.textContent = url;
           tempAccessUrlSelect.appendChild(option);
         });
-        tempAccessModal.style.display = 'flex'; // Show modal using flex for centering
+        tempAccessModal.style.display = 'flex'; // Show modal
       } else {
-        alert('当前没有在专注模式下限制的网址。');
+        alert('当前所有受限网址均已获得临时访问权限或没有受限网址。');
       }
+    }).catch(error => {
+       console.error("Error fetching initial modal data:", error);
+       alert('无法加载临时访问数据，请稍后再试。');
     });
   });
 
@@ -502,18 +523,58 @@ openStatsBtn.addEventListener('click', function() {
     challengeSection.style.display = 'block';
     modalChallengeString.textContent = '请求挑战码...';
     modalChallengeInput.value = '';
+    modalStatusMessage.textContent = ''; // Clear previous status
+    modalChallengeInput.value = '';
+    challengeSection.style.display = 'none'; // Hide challenge until duration is picked
     modalSubmitChallenge.disabled = true;
 
-    // Request challenge for the selected URL
-    chrome.runtime.sendMessage({ type: 'GET_ACCESS_CHALLENGE', url: selectedUrl }, (response) => {
-      if (chrome.runtime.lastError || !response || !response.challenge) {
-        modalChallengeString.textContent = '获取失败';
-        modalStatusMessage.textContent = '无法获取挑战码，请重试。';
-        modalStatusMessage.className = 'status-message error';
-      } else {
-        modalChallengeString.textContent = response.challenge;
-        modalSubmitChallenge.disabled = false; // Enable submit button
+    if (!selectedUrl) {
+      durationSelection.style.display = 'none'; // Hide duration options if no URL selected
+      return;
+    }
+    // Show duration options
+    durationSelection.style.display = 'block';
+    // Reset duration selection visually (optional, could default to first)
+    durationOptions.forEach(radio => radio.checked = false);
+
+  });
+
+  // Handle Duration selection in modal
+  durationOptions.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const selectedUrl = tempAccessUrlSelect.value;
+      if (!selectedUrl) return; // Should not happen if duration is visible
+
+      selectedDuration = parseInt(radio.value);
+      switch(selectedDuration) {
+          case 5: selectedChallengeLength = 16; break;
+          case 10: selectedChallengeLength = 24; break;
+          case 20: selectedChallengeLength = 30; break;
+          default: selectedChallengeLength = 30; // Default case
       }
+
+      challengeSection.style.display = 'block';
+      modalChallengeString.textContent = '请求挑战码...';
+      modalChallengeInput.value = '';
+      modalSubmitChallenge.disabled = true; // Disable submit until challenge arrives
+      modalStatusMessage.textContent = ''; // Clear status
+
+      // Request challenge for the selected URL and length
+      chrome.runtime.sendMessage({
+          type: 'GET_ACCESS_CHALLENGE',
+          url: selectedUrl,
+          length: selectedChallengeLength, // Send desired length
+          duration: selectedDuration // Send corresponding duration
+        }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.challenge) {
+          modalChallengeString.textContent = '获取失败';
+          modalStatusMessage.textContent = '无法获取挑战码，请重试。';
+          modalStatusMessage.className = 'status-message error';
+        } else {
+          modalChallengeString.textContent = response.challenge;
+          modalSubmitChallenge.disabled = false; // Enable submit button
+        }
+      });
     });
   });
 
@@ -527,6 +588,17 @@ openStatsBtn.addEventListener('click', function() {
       modalStatusMessage.className = 'status-message error';
       return;
     }
+
+    const selectedDurationRadio = document.querySelector('input[name="tempAccessDuration"]:checked');
+
+    if (!selectedUrl || !enteredCode || !selectedDurationRadio) {
+      modalStatusMessage.textContent = '请选择网址、时长并输入挑战码。';
+      modalStatusMessage.className = 'status-message error';
+      return;
+    }
+
+    // Duration is implicitly known by the background script based on what was stored with the challenge
+    // No need to send duration again here, just URL and code.
 
     modalSubmitChallenge.disabled = true;
     modalStatusMessage.textContent = '正在验证...';

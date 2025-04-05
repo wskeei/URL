@@ -129,8 +129,25 @@
           <option value="">-- 请选择网址 --</option>
         </select>
 
+        <!-- Duration Selection -->
+        <div id="durationSelection" style="display: none; margin-top: 15px;">
+           <p>选择临时访问时长:</p>
+           <div class="duration-options">
+             <label>
+               <input type="radio" name="tempAccessDuration" value="5"> 5 分钟 (16字符挑战)
+             </label>
+             <label>
+               <input type="radio" name="tempAccessDuration" value="10"> 10 分钟 (24字符挑战)
+             </label>
+             <label>
+               <input type="radio" name="tempAccessDuration" value="20" checked> 20 分钟 (30字符挑战)
+             </label>
+           </div>
+        </div>
+
+        <!-- Challenge Section -->
         <div id="challengeSection" style="display: none; margin-top: 15px;">
-          <p>请输入以下挑战码：</p>
+          <p>请输入以下挑战码:</p>
           <div class="challenge-string" id="modalChallengeString"></div>
           <input type="text" id="modalChallengeInput" class="modal-input" placeholder="在此输入挑战码">
           <button id="modalSubmitChallenge" class="focus-btn modal-btn" disabled>提交</button>

@@ -796,3 +796,27 @@ textarea:focus {
   font-weight: 500;
   color: var(--primary-color);
 }
+
+/* Modal Duration Options */
+.duration-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+  padding: 10px;
+  background-color: var(--hover-background);
+  border-radius: 6px;
+}
+
+.duration-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.duration-options input[type="radio"] {
+  cursor: pointer;
+}

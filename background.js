@@ -8,11 +8,11 @@ let focusMode = {
 let visitStartTimes = {};
 // 存储临时访问权限 { url: expiryTimestamp }
 let temporaryAccess = {};
-// 存储当前挑战 { tabId: { challenge: string, url: string } }
-let currentChallenges = {};
+// 存储当前挑战 { url: { challenge: string, duration: number } }
+let currentChallenges = {}; // Changed structure to store duration with challenge
 
-// 生成随机挑战字符串
-function generateChallengeString(length = 16) {
+// 生成随机挑战字符串 (accepts length parameter)
+function generateChallengeString(length) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_-+=[]{};:,.<>?';
   let result = '';
   for (let i = 0; i < length; i++) {
@@ -189,30 +189,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
 
-  // 获取临时访问挑战 (Now called from popup, no sender.tab.id needed)
+  // 获取临时访问挑战 (Accepts length and duration)
   if (message.type === 'GET_ACCESS_CHALLENGE') {
-    const challenge = generateChallengeString();
-    // Store challenge temporarily, associated with the URL it's for
-    // We need a way to manage multiple concurrent challenges if the popup is opened multiple times.
-    // Let's store challenges by URL for simplicity, overwriting previous ones for the same URL.
-    currentChallenges[message.url] = challenge;
+    const challengeLength = message.length || 30; // Default to 30 if not provided
+    const durationMinutes = message.duration || 20; // Default to 20 if not provided
+    const challenge = generateChallengeString(challengeLength);
+
+    // Store challenge and the requested duration together
+    currentChallenges[message.url] = {
+        challenge: challenge,
+        duration: durationMinutes
+    };
     sendResponse({ challenge: challenge });
-    // Clean up challenge after a short time if not used? Maybe not necessary.
+    // Clean up challenge after a short time if not used? Consider adding a timeout here.
     return true; // Keep message channel open
   }
 
-  // 验证临时访问代码 (Now called from popup)
+  // 验证临时访问代码 (Uses stored duration)
   if (message.type === 'VERIFY_ACCESS_CODE') {
-    const storedChallenge = currentChallenges[message.url]; // Check challenge by URL
-    if (storedChallenge && storedChallenge === message.code) {
-      // Grant access for 20 minutes
-      const expiry = Date.now() + 20 * 60 * 1000;
+    const challengeData = currentChallenges[message.url]; // Get challenge data {challenge, duration}
+
+    if (challengeData && challengeData.challenge === message.code) {
+      // Grant access for the duration stored with the challenge
+      const durationMinutes = challengeData.duration;
+      const expiry = Date.now() + durationMinutes * 60 * 1000;
       temporaryAccess[message.url] = expiry;
-      delete currentChallenges[message.url]; // Remove used challenge for this URL
-      sendResponse({ success: true, url: message.url });
+
+      delete currentChallenges[message.url]; // Remove used challenge data for this URL
+      sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes }); // Optionally send back granted duration
 
       // Clean up expired temporary access grants periodically
-      cleanupExpiredAccess();
+      // cleanupExpiredAccess(); // Cleanup is already running periodically
 
     } else {
       sendResponse({ success: false });
