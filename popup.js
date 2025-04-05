@@ -12,6 +12,17 @@ document.addEventListener('DOMContentLoaded', function() {
   const urlCheckboxes = document.getElementById('urlCheckboxes');
   const blockMessage = document.getElementById('blockMessage');
   const saveMessage = document.getElementById('saveMessage');
+  const requestTempAccessBtn = document.getElementById('requestTempAccessBtn');
+
+  // Modal elements
+  const tempAccessModal = document.getElementById('tempAccessModal');
+  const closeModalBtn = document.getElementById('closeModalBtn');
+  const tempAccessUrlSelect = document.getElementById('tempAccessUrlSelect');
+  const challengeSection = document.getElementById('challengeSection');
+  const modalChallengeString = document.getElementById('modalChallengeString');
+  const modalChallengeInput = document.getElementById('modalChallengeInput');
+  const modalSubmitChallenge = document.getElementById('modalSubmitChallenge');
+  const modalStatusMessage = document.getElementById('modalStatusMessage');
 
   // 标签切换
   tabBtns.forEach(btn => {
@@ -129,26 +140,35 @@ document.addEventListener('DOMContentLoaded', function() {
   // 加载专注模式状态
   function loadFocusStatus() {
     chrome.runtime.sendMessage({ type: 'GET_FOCUS_STATUS' }, response => {
-      if (response.focusMode.active) {
+      if (chrome.runtime.lastError) {
+        console.error("Error getting focus status:", chrome.runtime.lastError);
+        // Handle error appropriately, maybe show an error message in the popup
+        return;
+      }
+      
+      if (response && response.focusMode && response.focusMode.active) {
+        // Focus mode IS active
         const remainingTime = Math.max(0, Math.floor((response.focusMode.endTime - Date.now()) / 1000));
         let timeDisplay;
 
-        if (remainingTime >= 24 * 60 * 60) {  // 大于24小时
+        // Calculate time display
+        if (remainingTime >= 24 * 60 * 60) {
           const days = Math.floor(remainingTime / (24 * 60 * 60));
           const hours = Math.floor((remainingTime % (24 * 60 * 60)) / 3600);
           const minutes = Math.floor((remainingTime % 3600) / 60);
           timeDisplay = `${days}天 ${hours}时 ${minutes}分`;
-        } else if (remainingTime >= 3600) {  // 大于1小时
+        } else if (remainingTime >= 3600) {
           const hours = Math.floor(remainingTime / 3600);
           const minutes = Math.floor((remainingTime % 3600) / 60);
           const seconds = remainingTime % 60;
           timeDisplay = `${hours}时 ${minutes}分 ${seconds.toString().padStart(2, '0')}秒`;
-        } else {  // 小于1小时
+        } else {
           const minutes = Math.floor(remainingTime / 60);
           const seconds = remainingTime % 60;
           timeDisplay = `${minutes}分 ${seconds.toString().padStart(2, '0')}秒`;
         }
-        
+
+        // Update UI for active focus mode
         focusStatus.innerHTML = `
           <p>专注模式进行中</p>
           <div class="timer">${timeDisplay}</div>
@@ -156,23 +176,25 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         focusStatus.classList.add('active');
         startFocusBtn.disabled = true;
-        
-        // 更新URL选择框状态
-        loadUrlCheckboxes();
-        
+        requestTempAccessBtn.style.display = 'block'; // Show temp access btn
+
+        loadUrlCheckboxes(); // Update checkboxes state
+
+        // Check if timer should continue or if focus just ended
         if (remainingTime > 0) {
-          setTimeout(loadFocusStatus, 1000);
+          setTimeout(loadFocusStatus, 1000); // Continue countdown
         } else {
-          focusStatus.classList.remove('active');
-          startFocusBtn.disabled = false;
-          // 专注模式结束时也更新URL选择框状态
-          loadUrlCheckboxes();
+          // Focus mode just ended, reload status to reflect this
+          // Small delay to avoid potential race conditions with storage update
+          setTimeout(loadFocusStatus, 100);
         }
+
       } else {
+        // Focus mode is NOT active (or response was invalid)
         focusStatus.classList.remove('active');
         startFocusBtn.disabled = false;
-        // 确保非专注模式时也更新URL选择框状态
-        loadUrlCheckboxes();
+        requestTempAccessBtn.style.display = 'none'; // Hide temp access btn
+        loadUrlCheckboxes(); // Update checkboxes state
       }
     });
   }
@@ -360,6 +382,112 @@ openStatsBtn.addEventListener('click', function() {
     });
   });
 
+  // --- Temporary Access Modal Logic ---
+
+  // Open Modal
+  requestTempAccessBtn.addEventListener('click', () => {
+    // Reset modal state
+    tempAccessUrlSelect.innerHTML = '<option value="">-- 请选择网址 --</option>';
+    challengeSection.style.display = 'none';
+    modalChallengeInput.value = '';
+    modalStatusMessage.textContent = '';
+    modalSubmitChallenge.disabled = true;
+
+    // Fetch currently focus-blocked URLs
+    chrome.runtime.sendMessage({ type: 'GET_FOCUS_BLOCKED_URLS' }, (response) => {
+      if (response && response.urls && response.urls.length > 0) {
+        response.urls.forEach(url => {
+          const option = document.createElement('option');
+          option.value = url;
+          option.textContent = url;
+          tempAccessUrlSelect.appendChild(option);
+        });
+        tempAccessModal.style.display = 'flex'; // Show modal using flex for centering
+      } else {
+        alert('当前没有在专注模式下限制的网址。');
+      }
+    });
+  });
+
+  // Close Modal
+  closeModalBtn.addEventListener('click', () => {
+    tempAccessModal.style.display = 'none';
+  });
+
+  // Close modal if clicked outside content
+  window.addEventListener('click', (event) => {
+    if (event.target === tempAccessModal) {
+      tempAccessModal.style.display = 'none';
+    }
+  });
+
+  // Handle URL selection in modal
+  tempAccessUrlSelect.addEventListener('change', () => {
+    const selectedUrl = tempAccessUrlSelect.value;
+    modalStatusMessage.textContent = ''; // Clear previous status
+    if (!selectedUrl) {
+      challengeSection.style.display = 'none';
+      return;
+    }
+
+    challengeSection.style.display = 'block';
+    modalChallengeString.textContent = '请求挑战码...';
+    modalChallengeInput.value = '';
+    modalSubmitChallenge.disabled = true;
+
+    // Request challenge for the selected URL
+    chrome.runtime.sendMessage({ type: 'GET_ACCESS_CHALLENGE', url: selectedUrl }, (response) => {
+      if (chrome.runtime.lastError || !response || !response.challenge) {
+        modalChallengeString.textContent = '获取失败';
+        modalStatusMessage.textContent = '无法获取挑战码，请重试。';
+        modalStatusMessage.className = 'status-message error';
+      } else {
+        modalChallengeString.textContent = response.challenge;
+        modalSubmitChallenge.disabled = false; // Enable submit button
+      }
+    });
+  });
+
+  // Handle challenge submission in modal
+  modalSubmitChallenge.addEventListener('click', () => {
+    const selectedUrl = tempAccessUrlSelect.value;
+    const enteredCode = modalChallengeInput.value.trim();
+
+    if (!selectedUrl || !enteredCode) {
+      modalStatusMessage.textContent = '请选择网址并输入挑战码。';
+      modalStatusMessage.className = 'status-message error';
+      return;
+    }
+
+    modalSubmitChallenge.disabled = true;
+    modalStatusMessage.textContent = '正在验证...';
+    modalStatusMessage.className = 'status-message';
+
+    chrome.runtime.sendMessage({ type: 'VERIFY_ACCESS_CODE', code: enteredCode, url: selectedUrl }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+         modalStatusMessage.textContent = '验证时出错，请重试。';
+         modalStatusMessage.className = 'status-message error';
+         modalSubmitChallenge.disabled = false;
+      } else if (response.success) {
+        modalStatusMessage.textContent = '验证成功！您现在可以访问该网站20分钟。';
+        modalStatusMessage.className = 'status-message success';
+        // Optionally close modal after a delay
+        setTimeout(() => {
+          tempAccessModal.style.display = 'none';
+        }, 2500);
+      } else {
+        modalStatusMessage.textContent = '挑战码错误，请重试。';
+        modalStatusMessage.className = 'status-message error';
+        modalSubmitChallenge.disabled = false;
+        modalChallengeInput.value = '';
+        modalChallengeInput.focus();
+      }
+    });
+  });
+
+  // --- End Modal Logic ---
+
+
   // 初始化字符计数
   updateCharCount();
-}); 
+});

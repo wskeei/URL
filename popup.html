@@ -51,6 +51,7 @@
         </div>
         <div class="focus-status" id="focusStatus"></div>
         <button id="startFocus" class="focus-btn">开始专注</button>
+        <button id="requestTempAccessBtn" class="focus-btn secondary-btn" style="display: none; margin-top: 10px;">申请临时访问</button>
       </div>
     </div>
 
@@ -111,6 +112,30 @@
       <button id="openStats" class="focus-btn">查看详细统计</button>
     </div>
   </div>
+
+  <!-- Temporary Access Modal -->
+  <div id="tempAccessModal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <span class="close-btn" id="closeModalBtn">&times;</span>
+      <h2>专注模式临时访问</h2>
+      <div class="modal-body">
+        <p>选择需要临时访问（20分钟）的网站：</p>
+        <select id="tempAccessUrlSelect" class="modal-select">
+          <option value="">-- 请选择网址 --</option>
+        </select>
+
+        <div id="challengeSection" style="display: none; margin-top: 15px;">
+          <p>请输入以下挑战码：</p>
+          <div class="challenge-string" id="modalChallengeString"></div>
+          <input type="text" id="modalChallengeInput" class="modal-input" placeholder="在此输入挑战码">
+          <button id="modalSubmitChallenge" class="focus-btn modal-btn" disabled>提交</button>
+          <div id="modalStatusMessage" class="status-message"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- End Modal -->
+
   <script src="popup.js"></script>
 </body>
-</html> 
+</html>

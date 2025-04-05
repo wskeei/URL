@@ -42,4 +42,4 @@ if (document.readyState === 'loading') {
 window.onerror = function(msg, url, line, col, error) {
   showDebugInfo(`Error: ${msg} at ${line}:${col}`);
   return false;
-}; 
+};

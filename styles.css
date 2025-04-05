@@ -631,4 +631,118 @@ textarea:focus {
   font-size: 14px;
   margin-bottom: 8px;
   font-weight: 500;
-} 
+}
+
+/* Secondary Button Style */
+.secondary-btn {
+  background-color: var(--hover-background);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.secondary-btn:hover {
+  background-color: var(--border-color);
+}
+
+/* Modal Styles */
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+  /* Center the modal content */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-content {
+  background-color: var(--background-color);
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 90%; /* Could be more specific */
+  max-width: 400px; /* Maximum width */
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+  position: relative;
+  animation-name: animatetop;
+  animation-duration: 0.4s
+}
+
+/* Add Animation */
+@keyframes animatetop {
+  from {top: -300px; opacity: 0}
+  to {top: 0; opacity: 1}
+}
+
+.close-btn {
+  color: var(--text-secondary);
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close-btn:hover,
+.close-btn:focus {
+  color: var(--text-color);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.modal-body {
+  padding-top: 10px;
+}
+
+.modal-select, .modal-input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 14px;
+  background-color: var(--input-background);
+  color: var(--text-color);
+  box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+.modal-btn {
+  width: 100%;
+}
+
+/* Modal specific challenge string styling (if needed, otherwise reuse existing) */
+.modal .challenge-string {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.1em;
+  background-color: var(--hover-background);
+  padding: 10px;
+  border-radius: 4px;
+  margin: 15px 0;
+  display: block; /* Make it block to fit width */
+  text-align: center;
+  border: 1px solid var(--border-color);
+  user-select: none; /* Prevent easy copying */
+  letter-spacing: 1px;
+  color: var(--text-color);
+}
+
+/* Modal specific status message */
+.modal .status-message {
+  margin-top: 15px;
+  font-weight: bold;
+  text-align: center;
+  font-size: 14px;
+}
+.modal .status-message.error {
+  color: var(--danger-color);
+}
+.modal .status-message.success {
+  color: var(--success-color);
+}
