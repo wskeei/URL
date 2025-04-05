@@ -219,6 +219,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true; // Keep message channel open
   }
+
+  // 获取临时访问状态
+  if (message.type === 'GET_TEMP_ACCESS_STATUS') {
+    // Clean up expired grants before sending status
+    cleanupExpiredAccess();
+    sendResponse({ temporaryAccess: temporaryAccess });
+    // No need to return true here as it's synchronous after cleanup
+  }
 });
 
 // Function to clean up expired temporary access grants

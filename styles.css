@@ -746,3 +746,53 @@ textarea:focus {
 .modal .status-message.success {
   color: var(--success-color);
 }
+
+/* Temporary Access Status Display */
+.temp-access-status {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: var(--hover-background);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.temp-access-status h4 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.temp-access-status ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.temp-access-status li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 4px 0;
+  background-color: transparent; /* Override default li background */
+  margin-bottom: 0; /* Override default li margin */
+  border-bottom: 1px dashed var(--border-color);
+}
+
+.temp-access-status li:last-child {
+  border-bottom: none;
+}
+
+.temp-access-status .url-name {
+  flex: 1;
+  margin-right: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-color);
+}
+
+.temp-access-status .time-left {
+  font-weight: 500;
+  color: var(--primary-color);
+}

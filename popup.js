@@ -23,6 +23,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const modalChallengeInput = document.getElementById('modalChallengeInput');
   const modalSubmitChallenge = document.getElementById('modalSubmitChallenge');
   const modalStatusMessage = document.getElementById('modalStatusMessage');
+  const tempAccessStatusContainer = document.getElementById('tempAccessStatusContainer');
+  const tempAccessTimersList = document.getElementById('tempAccessTimersList');
+
+  let tempAccessTimerInterval = null; // To store the interval ID
 
   // 标签切换
   tabBtns.forEach(btn => {
@@ -256,10 +260,75 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
+  // --- Temporary Access Timer Display ---
+
+  function formatRemainingTime(seconds) {
+    if (seconds < 0) seconds = 0;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  function updateTempAccessTimers() {
+    chrome.runtime.sendMessage({ type: 'GET_TEMP_ACCESS_STATUS' }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error("Error getting temp access status:", chrome.runtime.lastError);
+        tempAccessStatusContainer.style.display = 'none'; // Hide on error
+        if (tempAccessTimerInterval) {
+           clearTimeout(tempAccessTimerInterval); // Use clearTimeout
+           tempAccessTimerInterval = null;
+        }
+        return;
+      }
+
+      if (response && response.temporaryAccess) {
+        const grants = response.temporaryAccess;
+        const now = Date.now();
+        let activeGrantsExist = false;
+
+        tempAccessTimersList.innerHTML = ''; // Clear previous list
+
+        Object.entries(grants).forEach(([url, expiry]) => {
+          const remainingSeconds = Math.floor((expiry - now) / 1000);
+          if (remainingSeconds > 0) {
+            activeGrantsExist = true;
+            const li = document.createElement('li');
+            li.innerHTML = `
+              <span class="url-name" title="${url}">${url}</span>
+              <span class="time-left">${formatRemainingTime(remainingSeconds)}</span>
+            `;
+            tempAccessTimersList.appendChild(li);
+          }
+        });
+
+        if (activeGrantsExist) {
+          tempAccessStatusContainer.style.display = 'block';
+          // Clear previous timeout before setting a new one
+          if (tempAccessTimerInterval) clearTimeout(tempAccessTimerInterval);
+          tempAccessTimerInterval = setTimeout(updateTempAccessTimers, 1000); // Update every second
+        } else {
+          tempAccessStatusContainer.style.display = 'none';
+          if (tempAccessTimerInterval) {
+             clearTimeout(tempAccessTimerInterval);
+             tempAccessTimerInterval = null;
+          }
+        }
+      } else {
+        // No grants or error in response
+        tempAccessStatusContainer.style.display = 'none';
+         if (tempAccessTimerInterval) {
+             clearTimeout(tempAccessTimerInterval);
+             tempAccessTimerInterval = null;
+          }
+      }
+    });
+  }
+
   // 初始化
   loadBlockedUrls();
   loadUrlCheckboxes();
   loadFocusStatus();
+  updateTempAccessTimers(); // Initial call to load timers
 
   // 添加一个清理数据的函数
   function cleanStorage() {
@@ -471,6 +540,7 @@ openStatsBtn.addEventListener('click', function() {
       } else if (response.success) {
         modalStatusMessage.textContent = '验证成功！您现在可以访问该网站20分钟。';
         modalStatusMessage.className = 'status-message success';
+        updateTempAccessTimers(); // Update timers immediately after granting access
         // Optionally close modal after a delay
         setTimeout(() => {
           tempAccessModal.style.display = 'none';
