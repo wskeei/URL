@@ -9,12 +9,15 @@ let visitStartTimes = {};
 // --- Storage Keys ---
 const SETTINGS_KEY = 'extensionSettings'; // { disableCopy: bool, disableCopyLockExpiry: ts, strictMode: bool, strictModeLockExpiry: ts }
 const DAILY_USAGE_KEY = 'dailyTempAccessUsage'; // { "YYYY-MM-DD": { "url": true } }
+const BILI_WHITELIST_KEY = 'biliUidWhitelist'; // Array of strings (UIDs)
 
 // --- Global Variables ---
 // 存储临时访问权限 { url: expiryTimestamp }
 let temporaryAccess = {};
 // 存储当前挑战 { url: { challenge: string, duration: number } }
 let currentChallenges = {};
+// 存储等待内容脚本UID检查的标签页 { tabId: boolean }
+let tabsPendingUidCheck = {};
 
 // --- Utility Functions ---
 // 获取当天日期字符串 YYYY-MM-DD
@@ -32,31 +35,66 @@ function generateChallengeString(length) {
   return result;
 }
 
-// 检查URL是否应该被阻止的函数
+// 检查URL是否应该被阻止（用于非Bilibili视频页的初始检查）
 function shouldBlockUrl(url, callback) {
-  // 检查是否有临时访问权限
-  if (temporaryAccess[url] && Date.now() < temporaryAccess[url]) {
-    callback(false); // Don't block
+  // 1. 检查是否有临时访问权限 (Applies to all URLs)
+  // Extract base URL for temp access check if needed, or check full URL? Let's check full URL for now.
+  const urlToCheckForTempAccess = url; // Or derive a base URL if temp access is domain-based
+  if (temporaryAccess[urlToCheckForTempAccess] && Date.now() < temporaryAccess[urlToCheckForTempAccess]) {
+    callback(false); // Has temp access, don't block
     return;
   }
 
+  // 2. 检查是否是Bilibili白名单UID主页 (space.bilibili.com)
+  const biliSpaceMatch = url.match(/https?:\/\/space\.bilibili\.com\/(\d+)/);
+  if (biliSpaceMatch) {
+    const uid = biliSpaceMatch[1];
+    chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
+      const whitelist = result[BILI_WHITELIST_KEY] || [];
+      if (whitelist.includes(uid)) {
+        callback(false); // Whitelisted space page, don't block
+        return;
+      }
+      // Space page UID not whitelisted, check general rules for bilibili.com
+      checkGeneralBlockingRules(url, callback); // Check if bilibili.com itself is blocked
+    });
+    return; // Async check started
+  }
+
+  // 3. Bilibili video pages (www.bilibili.com/video/*) are handled *after* load by content script + message listener
+  // This function should NOT block them here.
+  if (url.includes('www.bilibili.com/video/')) {
+     callback(false); // Don't block *yet*, wait for content script
+     return;
+  }
+
+  // 4. For all OTHER URLs, perform general blocking checks
+  checkGeneralBlockingRules(url, callback);
+}
+
+// Helper function to check if a URL should be blocked based on general/focus lists
+// This is used by shouldBlockUrl (for non-bili URLs) and the message listener (for bili video URLs)
+function checkGeneralBlockingRules(url, callback) {
   chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(data) {
     const blockedUrls = data.blockedUrls || [];
     const focusModeData = data.focusMode || { active: false, urls: [], endTime: 0 };
 
+    // Check if the URL matches any enabled blocked URL pattern
     const isGenerallyBlocked = blockedUrls.some(item =>
-      item.enabled && url.includes(item.url)
+      item.enabled && url.includes(item.url) // Simple includes check
     );
 
+    // Check if the URL matches any focus mode URL pattern
     const isFocusBlocked = focusModeData.active &&
                            Date.now() < focusModeData.endTime &&
-                           focusModeData.urls.some(blockedUrl => url.includes(blockedUrl));
+                           focusModeData.urls.some(blockedUrl => url.includes(blockedUrl)); // Simple includes check
 
     const shouldBlock = isGenerallyBlocked || isFocusBlocked;
 
-    callback(shouldBlock); // Only pass whether to block or not
+    callback(shouldBlock);
   });
 }
+
 
 // 阻止页面访问的函数 (Removed isFocusBlock parameter)
 function blockPage(tabId) {
@@ -66,72 +104,182 @@ function blockPage(tabId) {
 }
 
 
-// 检查并处理URL
+// 检查并处理URL (Navigation Listeners)
 function checkAndBlockUrl(details) {
+  const tabId = details.tabId;
+  const url = details.url;
   const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
-  if (details.url.startsWith(blockedPageBaseUrl)) {
-    return; // Don't block the blocked page itself
-  }
 
-  // Ignore non-main frame navigations
-  if (details.frameId !== 0) {
+  // Ignore self, non-http(s), and non-main frame navigations
+  if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
     return;
   }
 
-  shouldBlockUrl(details.url, (shouldBlock) => { // Removed isFocusBlock from callback
-    if (shouldBlock) {
-      // Record end time if tracking started
-      if (visitStartTimes[details.tabId]) {
-        const duration = (Date.now() - visitStartTimes[details.tabId]) / 1000; // seconds
-        // Use the URL stored when tracking started, not the potentially blocked URL
-        const visitedUrl = Object.keys(visitStartTimes).find(key => visitStartTimes[key] === visitStartTimes[details.tabId]);
-        if (visitedUrl) {
-             saveVisitStats(visitedUrl, duration); // Save stats for the actual visited URL
+  // --- Handle Bilibili Video Pages ---
+  if (url.includes('www.bilibili.com/video/')) {
+    // Check if bilibili.com *would* be blocked by general rules
+    checkGeneralBlockingRules(url, (wouldBeBlocked) => {
+      if (wouldBeBlocked) {
+        // Don't block yet, mark for content script check
+        console.log(`Bilibili Whitelist: Marking tab ${tabId} (${url}) for UID check.`);
+        tabsPendingUidCheck[tabId] = true;
+        // Start visit timer here if not already started? Or wait until confirmed allowed? Let's wait.
+      } else {
+        // Not blocked by general rules, allow navigation and start timer
+        if (!visitStartTimes[tabId]) {
+          visitStartTimes[tabId] = Date.now();
         }
-        delete visitStartTimes[details.tabId];
       }
-      blockPage(details.tabId, details.url, isFocusBlock); // Pass original URL and focus block status
+    });
+    return; // Don't proceed to shouldBlockUrl for video pages
+  }
+
+  // --- Handle Other URLs ---
+  shouldBlockUrl(url, (shouldBlock) => {
+    if (shouldBlock) {
+      // Block immediately
+      console.log(`Blocking tab ${tabId} (${url}) based on shouldBlockUrl.`);
+      // End visit timer if started
+      if (visitStartTimes[tabId]) {
+         const duration = (Date.now() - visitStartTimes[tabId]) / 1000;
+         // How to get the original URL if redirected? This is tricky.
+         // For now, let's assume the 'url' here is close enough or handle on commit.
+         saveVisitStats(url, duration); // Save stats for the URL being blocked
+         delete visitStartTimes[tabId];
+      }
+      blockPage(tabId);
     } else {
-      // Record start time only if not already tracking for this tab
-      // And only if it's not the blocked page
-       if (!visitStartTimes[details.tabId] && !details.url.startsWith(blockedPageBaseUrl)) {
-           // Store URL along with start time to handle redirects correctly
-           visitStartTimes[details.tabId] = Date.now();
-            // We need a way to associate the start time with the URL being visited *at that time*.
-            // This logic remains complex. Let's stick to the current approach for now.
-       }
+      // Allow navigation, start visit timer if not already started
+      if (!visitStartTimes[tabId]) {
+        visitStartTimes[tabId] = Date.now();
+      }
     }
   });
 }
 
+// --- Revised onCommitted Listener ---
+// We need onCommitted to handle cases where the user navigates *away* from an allowed page
+// or potentially to catch the final URL after redirects.
+chrome.webNavigation.onCommitted.addListener((details) => {
+    const tabId = details.tabId;
+    const url = details.url;
+    const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
 
-// Listen for navigation events (main frame only)
-chrome.webNavigation.onBeforeNavigate.addListener(checkAndBlockUrl, { url: [{ urlMatches: 'https?://*/*' }], types: ["main_frame"] });
-// onCommitted might be better for capturing the final URL after redirects
-chrome.webNavigation.onCommitted.addListener(checkAndBlockUrl, { url: [{ urlMatches: 'https?://*/*' }], types: ["main_frame"] });
+    // Ignore self, non-http(s), and non-main frame navigations
+    if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
+      return;
+    }
+
+    // If navigating *away* from a page where timer was running, record stats
+    if (visitStartTimes[tabId]) {
+       // Check if the *new* URL should be blocked. If so, stop timer.
+       // This logic gets complex with redirects. Let's simplify:
+       // If a timer is running, and the new URL is NOT the blocked page,
+       // assume the user navigated away *before* being blocked.
+       // We need a better way to associate start time with the *specific* allowed URL.
+       // Let's postpone refining stat tracking for now and focus on blocking.
+
+       // If the new URL is the blocked page, the timer was likely stopped by checkAndBlockUrl.
+       // If the new URL is *not* the blocked page, and *not* a pending video check,
+       // maybe stop the timer? This needs more thought.
+    }
+
+    // If this is the final URL of a Bilibili video page that was pending check,
+    // the content script will handle it via messages.
+    // If it's *not* a video page, re-run the blocking check in case of redirects.
+    if (!url.includes('www.bilibili.com/video/')) {
+        shouldBlockUrl(url, (shouldBlock) => {
+            if (shouldBlock) {
+                console.log(`Blocking tab ${tabId} (${url}) on commit.`);
+                // Stop timer if running
+                if (visitStartTimes[tabId]) {
+                    // Save stats logic here (complex)
+                    delete visitStartTimes[tabId];
+                }
+                blockPage(tabId);
+            } else {
+                 // Ensure timer starts if not already running for this allowed URL
+                 if (!visitStartTimes[tabId]) {
+                    visitStartTimes[tabId] = Date.now();
+                 }
+            }
+        });
+    }
+    // If it IS a video page, do nothing here, wait for content script message.
+
+}, { url: [{ urlMatches: 'https?://*/*' }], types: ["main_frame"] });
 
 
-// Listen for tab updates (e.g., user types URL directly)
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // Check only when loading is complete and URL is present and not the blocked page
-  if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
-     const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
-     if (tab.url.startsWith(blockedPageBaseUrl)) {
-         return; // Don't re-evaluate the blocked page
-     }
-    shouldBlockUrl(tab.url, (shouldBlock) => { // Removed isFocusBlock from callback
-      if (shouldBlock) {
-        blockPage(tabId); // Simplified blockPage call
-      }
-    });
-  }
-});
+// Listen for navigation start (mainly to potentially stop timers)
+chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+    const tabId = details.tabId;
+    const url = details.url;
+    const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
 
-// 处理来自popup的消息
+    // Ignore self, non-http(s), and non-main frame navigations
+    if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
+      return;
+    }
+
+    // If navigating away from a page where timer was running, stop the timer and save stats
+    if (visitStartTimes[tabId]) {
+        console.log(`Navigation started on tab ${tabId}, stopping timer.`);
+        const duration = (Date.now() - visitStartTimes[tabId]) / 1000;
+        // Need the URL associated with the start time...
+        // This requires storing { tabId: { startTime: ts, url: originalUrl } }
+        // Let's skip accurate stat saving on navigation for now.
+        delete visitStartTimes[tabId]; // Just delete timer for now
+    }
+
+    // If navigating away from a page pending UID check, clear the pending state
+    if (tabsPendingUidCheck[tabId]) {
+        console.log(`Navigation started on tab ${tabId}, clearing pending UID check.`);
+        delete tabsPendingUidCheck[tabId];
+    }
+
+}, { url: [{ urlMatches: 'https?://*/*' }], types: ["main_frame"] });
+
+
+
+
+// Listen for tab updates (e.g., user types URL directly - simplified, relies on onCommitted now)
+// chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+//   // Check only when loading is complete and URL is present and not the blocked page
+//   if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
+//      const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
+//      if (tab.url.startsWith(blockedPageBaseUrl)) {
+//          return; // Don't re-evaluate the blocked page
+//      }
+//      // Re-run the commit logic essentially
+//      handleCommitOrUpdate(tabId, tab.url);
+//   }
+// });
+
+// // Helper to consolidate commit/update logic
+// function handleCommitOrUpdate(tabId, url) {
+//     if (!url.includes('www.bilibili.com/video/')) {
+//         shouldBlockUrl(url, (shouldBlock) => {
+//             if (shouldBlock) {
+//                 console.log(`Blocking tab ${tabId} (${url}) on update/commit.`);
+//                 if (visitStartTimes[tabId]) delete visitStartTimes[tabId]; // Stop timer
+//                 blockPage(tabId);
+//             } else {
+//                  if (!visitStartTimes[tabId]) visitStartTimes[tabId] = Date.now(); // Start timer
+//             }
+//         });
+//     }
+//     // Video pages handled by messages
+// }
+
+
+// 处理来自popup和content script的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+  // --- Messages from Popup ---
   if (message.type === 'START_FOCUS') {
     const endTime = Date.now() + message.duration * 60 * 1000;
     const focusMode = {
+      // ... (existing popup message handlers remain the same) ...
       active: true,
       urls: message.urls,
       endTime: endTime
@@ -139,7 +287,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.sync.set({ focusMode }, () => {
       sendResponse({ success: true });
     });
-    return true;
+    return true; // Keep channel open for async response
   }
   
   if (message.type === 'GET_FOCUS_STATUS') {
@@ -147,11 +295,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const focusMode = result.focusMode || { active: false, endTime: 0 };
       if (focusMode.active && Date.now() >= focusMode.endTime) {
         focusMode.active = false;
-        chrome.storage.sync.set({ focusMode });
+        chrome.storage.sync.set({ focusMode }); // Update storage if expired
       }
       sendResponse({ focusMode });
     });
-    return true;
+    return true; // Keep channel open for async response
   }
 
   if (message.type === 'ADD_FOCUS_URL') {
@@ -160,112 +308,112 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (focusMode.active && !focusMode.urls.includes(message.url)) {
         focusMode.urls.push(message.url);
         chrome.storage.sync.set({ focusMode }, () => {
-          // 立即检查所有标签页
+          // Immediately check all tabs for the newly added URL
           chrome.tabs.query({}, (tabs) => {
             tabs.forEach(tab => {
               if (tab.url && tab.url.includes(message.url)) {
-                blockPage(tab.id);
+                 // Re-evaluate blocking for this tab
+                 // If it's a video page, mark for check; otherwise, block directly
+                 if (tab.url.includes('www.bilibili.com/video/')) {
+                     console.log(`Bilibili Whitelist: Marking tab ${tab.id} (${tab.url}) for UID check due to focus list update.`);
+                     tabsPendingUidCheck[tab.id] = true;
+                 } else {
+                     blockPage(tab.id);
+                 }
               }
             });
           });
+          sendResponse({ success: true }); // Send response after potential async operations
         });
+      } else {
+         sendResponse({ success: true }); // URL already present or focus not active
       }
-      sendResponse({ success: true });
     });
-    return true;
+    return true; // Keep channel open for async response
   }
 
-  // 处理主题变更消息
   if (message.type === 'THEME_CHANGED') {
-    // 广播主题变更消息到所有打开的插件页面
-    chrome.runtime.sendMessage({ 
-      type: 'APPLY_THEME',
-      theme: message.theme 
-    }).catch(() => {
-      // 忽略错误，因为可能没有其他页面在监听
-    });
-    return true; // Keep message channel open for async response
+    chrome.runtime.sendMessage({ type: 'APPLY_THEME', theme: message.theme })
+      .catch(() => { /* Ignore if no other pages listening */ });
+    // No response needed, but return true if any async ops were involved (none here)
+    return false;
   }
 
-  // 获取当前专注模式下限制的URL列表
   if (message.type === 'GET_FOCUS_BLOCKED_URLS') {
     chrome.storage.sync.get(['focusMode'], (result) => {
       const focusMode = result.focusMode || { active: false, urls: [] };
       if (focusMode.active && Date.now() < focusMode.endTime) {
         sendResponse({ urls: focusMode.urls });
       } else {
-        sendResponse({ urls: [] }); // Return empty if not active
+        sendResponse({ urls: [] });
       }
     });
-    return true; // Keep message channel open for async response
+    return true; // Keep channel open for async response
   }
 
-  // 获取临时访问挑战 (Accepts length and duration)
   if (message.type === 'GET_ACCESS_CHALLENGE') {
-    const challengeLength = message.length || 30; // Default to 30 if not provided
-    const durationMinutes = message.duration || 20; // Default to 20 if not provided
+    const challengeLength = message.length || 30;
+    const durationMinutes = message.duration || 20;
     const challenge = generateChallengeString(challengeLength);
-
-    // Store challenge and the requested duration together
-    currentChallenges[message.url] = {
-        challenge: challenge,
-        duration: durationMinutes
-    };
+    currentChallenges[message.url] = { challenge: challenge, duration: durationMinutes };
     sendResponse({ challenge: challenge });
-    // Clean up challenge after a short time if not used? Consider adding a timeout here.
-    return true; // Keep message channel open
+    return true; // Keep channel open for async response
   }
 
-  // 验证临时访问代码 (Uses stored duration)
   if (message.type === 'VERIFY_ACCESS_CODE') {
-    const challengeData = currentChallenges[message.url]; // Get challenge data {challenge, duration}
-
+    const challengeData = currentChallenges[message.url];
     if (challengeData && challengeData.challenge === message.code) {
-      // Grant access for the duration stored with the challenge
       const durationMinutes = challengeData.duration;
       const expiry = Date.now() + durationMinutes * 60 * 1000;
-      temporaryAccess[message.url] = expiry;
+      temporaryAccess[message.url] = expiry; // Grant access
+      delete currentChallenges[message.url];
 
-      delete currentChallenges[message.url]; // Remove used challenge data for this URL
-      sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes }); // Optionally send back granted duration
-
-      // Clean up expired temporary access grants periodically
-      // cleanupExpiredAccess(); // Cleanup is already running periodically
+      // Check strict mode and record usage if needed
+      chrome.storage.sync.get([SETTINGS_KEY], (settingsResult) => {
+        const settings = settingsResult[SETTINGS_KEY] || {};
+        if (settings.strictMode) {
+          const today = getTodayDateString();
+          chrome.storage.local.get([DAILY_USAGE_KEY], (localResult) => {
+            let usageData = localResult[DAILY_USAGE_KEY] || {};
+            if (!usageData[today]) usageData[today] = {};
+            usageData[today][message.url] = true;
+            chrome.storage.local.set({ [DAILY_USAGE_KEY]: usageData }, () => {
+              console.log(`Strict mode: Recorded usage for ${message.url} on ${today}`);
+              sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes });
+            });
+          });
+        } else {
+          sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes });
+        }
+      });
+      return true; // Keep channel open for async response
 
     } else {
       sendResponse({ success: false });
+      return false; // Synchronous response
     }
-    return true; // Keep message channel open
   }
 
-  // 获取临时访问状态
   if (message.type === 'GET_TEMP_ACCESS_STATUS') {
-    // Clean up expired grants before sending status
     cleanupExpiredAccess();
     sendResponse({ temporaryAccess: temporaryAccess });
     return false; // Synchronous response
   }
 
-  // 获取设置状态
   if (message.type === 'GET_SETTINGS_STATUS') {
     chrome.storage.sync.get([SETTINGS_KEY], (result) => {
-      const settings = result[SETTINGS_KEY] || {};
-      sendResponse({ settings });
+      sendResponse({ settings: result[SETTINGS_KEY] || {} });
     });
-    return true; // Asynchronous response
+    return true; // Keep channel open for async response
   }
 
-   // 更新设置
    if (message.type === 'UPDATE_SETTING') {
      const { settingName, value } = message;
      chrome.storage.sync.get([SETTINGS_KEY], (result) => {
        let settings = result[SETTINGS_KEY] || {};
        const now = Date.now();
        let lockExpiry = null;
-
-       if (value === true) { // Only set lock when enabling
-         lockExpiry = now + 24 * 60 * 60 * 1000; // Lock for 24 hours
-       }
+       if (value === true) lockExpiry = now + 24 * 60 * 60 * 1000;
 
        if (settingName === 'disableCopy') {
          settings.disableCopy = value;
@@ -273,37 +421,83 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
        } else if (settingName === 'strictMode') {
          settings.strictMode = value;
          settings.strictModeLockExpiry = value ? lockExpiry : null;
-         // If strict mode is being turned off, clear today's usage data? Optional, maybe better not to.
        }
 
        chrome.storage.sync.set({ [SETTINGS_KEY]: settings }, () => {
          if (chrome.runtime.lastError) {
            sendResponse({ success: false, error: chrome.runtime.lastError.message });
          } else {
-           sendResponse({ success: true, settings }); // Send back updated settings
+           sendResponse({ success: true, settings });
          }
        });
      });
-     return true; // Asynchronous response
+     return true; // Keep channel open for async response
    }
 
-   // 检查严格模式下的每日使用情况 (Added for popup check before challenge)
    if (message.type === 'CHECK_DAILY_USAGE') {
      const today = getTodayDateString();
      chrome.storage.local.get([DAILY_USAGE_KEY], (result) => {
         const usageData = result[DAILY_USAGE_KEY] || {};
         const todaysUsage = usageData[today] || {};
-        const usedToday = !!todaysUsage[message.url];
-        sendResponse({ usedToday });
+        sendResponse({ usedToday: !!todaysUsage[message.url] });
      });
-     return true; // Asynchronous response
+     return true; // Keep channel open for async response
    }
 
+
+  // --- Messages from Content Script ---
+
+  if (message.type === 'BILIBILI_UID_FOUND') {
+    const tabId = sender?.tab?.id;
+    const receivedUid = message.uid;
+
+    if (tabId && tabsPendingUidCheck[tabId]) {
+      console.log(`Bilibili Whitelist: Received UID ${receivedUid} from tab ${tabId}. Checking whitelist.`);
+      delete tabsPendingUidCheck[tabId]; // Processed this tab
+
+      chrome.storage.sync.get([BILI_WHITELIST_KEY], (result) => {
+        const whitelist = result[BILI_WHITELIST_KEY] || [];
+        if (whitelist.includes(receivedUid)) {
+          console.log(`Bilibili Whitelist: UID ${receivedUid} is whitelisted. Allowing tab ${tabId}.`);
+          // UID is whitelisted, allow navigation. Start timer if needed.
+          if (!visitStartTimes[tabId]) {
+             visitStartTimes[tabId] = Date.now();
+          }
+          sendResponse({ allowed: true }); // Optional: respond to content script
+        } else {
+          console.log(`Bilibili Whitelist: UID ${receivedUid} not in whitelist. Blocking tab ${tabId}.`);
+          // UID not whitelisted, block the page
+          blockPage(tabId);
+          sendResponse({ allowed: false }); // Optional: respond to content script
+        }
+      });
+      return true; // Keep channel open for async response to storage.get
+    } else {
+       console.log(`Bilibili Whitelist: Received UID ${receivedUid} from unexpected tab ${tabId}. Ignoring.`);
+    }
+  }
+
+  if (message.type === 'BILIBILI_UID_NOT_FOUND') {
+     const tabId = sender?.tab?.id;
+     if (tabId && tabsPendingUidCheck[tabId]) {
+        console.log(`Bilibili Whitelist: Content script could not find UID on tab ${tabId}. Blocking.`);
+        delete tabsPendingUidCheck[tabId]; // Processed this tab
+        blockPage(tabId); // Block because UID couldn't be verified
+        sendResponse({ allowed: false }); // Optional: respond to content script
+     } else {
+        console.log(`Bilibili Whitelist: Received UID_NOT_FOUND from unexpected tab ${tabId}. Ignoring.`);
+     }
+     return false; // Synchronous processing
+  }
+
+  // Default: If message type not recognized, return false or undefined
+  // Ensure popup handlers return true if they are async.
 });
+
 
 // --- Background Tasks ---
 
-// Function to clean up expired temporary access grants
+// Function to clean up expired temporary access grants (remains the same)
 function cleanupExpiredAccess() {
     const now = Date.now();
     let changed = false;
@@ -393,68 +587,29 @@ function saveVisitStats(url, duration) {
 
 // (Web Navigation and Tab Update listeners remain the same)
 
-// Add listener for extension startup to clear old usage data
+// Add listener for extension startup to clear old usage data (remains the same)
 chrome.runtime.onStartup.addListener(() => {
   console.log("Extension started up, clearing old usage data.");
   clearOldUsageData();
 });
 
 
-// Tab removal listener (remains the same)
+// Tab removal listener (updated)
 chrome.tabs.onRemoved.addListener((tabId) => {
+  // Clear visit timer if tab is closed
   if (visitStartTimes[tabId]) {
-    // Logic for saving stats on close is still complex, skipping for now.
+    console.log(`Tab ${tabId} removed, clearing visit timer.`);
+    // Save stats before deleting? Still complex.
     delete visitStartTimes[tabId];
+  }
+  // Clear pending UID check if tab is closed
+  if (tabsPendingUidCheck[tabId]) {
+    console.log(`Tab ${tabId} removed, clearing pending UID check.`);
+    delete tabsPendingUidCheck[tabId];
   }
 });
 
 
 // --- Strict Mode Logic Integration ---
-
-// Modify VERIFY_ACCESS_CODE to record usage if strict mode is on
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // ... other message handlers ...
-
-  if (message.type === 'VERIFY_ACCESS_CODE') {
-    const challengeData = currentChallenges[message.url];
-
-    if (challengeData && challengeData.challenge === message.code) {
-      const durationMinutes = challengeData.duration;
-      const expiry = Date.now() + durationMinutes * 60 * 1000;
-      temporaryAccess[message.url] = expiry;
-      delete currentChallenges[message.url];
-
-      // Check if strict mode is enabled and record usage
-      chrome.storage.sync.get([SETTINGS_KEY], (result) => {
-        const settings = result[SETTINGS_KEY] || {};
-        if (settings.strictMode) {
-          const today = getTodayDateString();
-          chrome.storage.local.get([DAILY_USAGE_KEY], (localResult) => {
-            let usageData = localResult[DAILY_USAGE_KEY] || {};
-            if (!usageData[today]) {
-              usageData[today] = {};
-            }
-            usageData[today][message.url] = true; // Mark as used today
-            chrome.storage.local.set({ [DAILY_USAGE_KEY]: usageData }, () => {
-               console.log(`Strict mode: Recorded usage for ${message.url} on ${today}`);
-               // Send response after potentially updating storage
-               sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes });
-            });
-          });
-        } else {
-           // Strict mode not enabled, send response immediately
-           sendResponse({ success: true, url: message.url, grantedDuration: durationMinutes });
-        }
-      });
-      // Return true because the response might be sent asynchronously from storage callback
-      return true;
-
-    } else {
-      sendResponse({ success: false });
-      return false; // Synchronous response
-    }
-  }
-
-  // Ensure other handlers return true if async, false otherwise
-  // (Review previous handlers if necessary)
-});
+// (This logic is now integrated within the VERIFY_ACCESS_CODE message handler above)
+// No separate listener needed here.

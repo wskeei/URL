@@ -34,6 +34,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const enableStrictModeCheckbox = document.getElementById('enableStrictMode');
   const strictModeLockInfo = document.getElementById('strictModeLockInfo');
 
+  // Bilibili Whitelist elements
+  const biliUidInput = document.getElementById('biliUidInput');
+  const addBiliUidButton = document.getElementById('addBiliUidButton');
+  const biliUidList = document.getElementById('biliUidList');
+
   let tempAccessTimerInterval = null; // To store the interval ID
   let currentSettings = {}; // To store loaded settings
   let selectedDuration = 20; // Default duration
@@ -455,6 +460,83 @@ document.addEventListener('DOMContentLoaded', function() {
       }
   }
 
+  // --- Bilibili Whitelist Logic ---
+
+  const BILI_WHITELIST_KEY = 'biliUidWhitelist';
+
+  function loadBiliUidWhitelist() {
+    chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
+      const whitelist = result[BILI_WHITELIST_KEY] || [];
+      biliUidList.innerHTML = ''; // Clear current list
+
+      whitelist.forEach(uid => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <div class="url-item">
+            <span class="url-text">${uid}</span>
+            <button class="delete-btn bili-delete-btn" data-uid="${uid}">删除</button>
+          </div>
+        `;
+        biliUidList.appendChild(li);
+      });
+
+      // Add event listeners to new delete buttons
+      document.querySelectorAll('.bili-delete-btn').forEach(button => {
+        button.addEventListener('click', function() {
+          const uidToDelete = this.getAttribute('data-uid');
+          deleteBiliUid(uidToDelete);
+        });
+      });
+    });
+  }
+
+  function addBiliUid() {
+    const uid = biliUidInput.value.trim();
+    // Basic validation: check if it's a non-empty string of digits
+    if (uid && /^\d+$/.test(uid)) {
+      chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
+        const whitelist = result[BILI_WHITELIST_KEY] || [];
+        if (!whitelist.includes(uid)) {
+          whitelist.push(uid);
+          chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist }, function() {
+            if (chrome.runtime.lastError) {
+              console.error("Error saving Bili UID:", chrome.runtime.lastError);
+              alert('添加UID失败，请重试。');
+            } else {
+              loadBiliUidWhitelist(); // Refresh the list
+              biliUidInput.value = ''; // Clear input
+            }
+          });
+        } else {
+          alert('该UID已在白名单中。');
+          biliUidInput.value = '';
+        }
+      });
+    } else {
+      alert('请输入有效的B站用户UID（纯数字）。');
+    }
+  }
+
+  function deleteBiliUid(uidToDelete) {
+    chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
+      let whitelist = result[BILI_WHITELIST_KEY] || [];
+      whitelist = whitelist.filter(uid => uid !== uidToDelete);
+      chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist }, function() {
+        if (chrome.runtime.lastError) {
+          console.error("Error deleting Bili UID:", chrome.runtime.lastError);
+          alert('删除UID失败，请重试。');
+        } else {
+          loadBiliUidWhitelist(); // Refresh the list
+        }
+      });
+    });
+  }
+
+  // Add event listener for the add button
+  addBiliUidButton.addEventListener('click', addBiliUid);
+
+  // --- End Bilibili Whitelist Logic ---
+
 
   // --- Initialization ---
   loadBlockedUrls();
@@ -462,6 +544,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadFocusStatus();
   updateTempAccessTimers(); // Initial call to load timers
   loadSettings(); // Load settings on popup open
+  loadBiliUidWhitelist(); // Load Bili UIDs on popup open
 
   // 添加一个清理数据的函数
   function cleanStorage() {
