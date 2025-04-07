@@ -9,24 +9,24 @@
     "tabs"
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "src/pages/popup.html"
   },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/scripts/background.js"
   },
   "content_scripts": [
     {
       "matches": ["*://www.bilibili.com/video/*"],
-      "js": ["content_script.js"],
+      "js": ["src/scripts/content_script.js"],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [{
     "resources": [
-      "blocked.html",
-      "blocked.js",
-      "statistics.html",
-      "statistics.js"
+      "src/pages/blocked.html",
+      "src/scripts/blocked.js",
+      "src/pages/statistics.html",
+      "src/scripts/statistics.js"
     ],
     "matches": ["<all_urls>"]
   }]

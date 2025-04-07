@@ -99,7 +99,7 @@ function checkGeneralBlockingRules(url, callback) {
 // 阻止页面访问的函数 (Removed isFocusBlock parameter)
 function blockPage(tabId) {
   // No need to pass original URL anymore as override is in popup
-  const blockedPageUrl = chrome.runtime.getURL('blocked.html');
+  const blockedPageUrl = chrome.runtime.getURL('src/pages/blocked.html');
   chrome.tabs.update(tabId, { url: blockedPageUrl });
 }
 
@@ -108,7 +108,7 @@ function blockPage(tabId) {
 function checkAndBlockUrl(details) {
   const tabId = details.tabId;
   const url = details.url;
-  const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
+  const blockedPageBaseUrl = chrome.runtime.getURL('src/pages/blocked.html');
 
   // Ignore self, non-http(s), and non-main frame navigations
   if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
@@ -163,7 +163,7 @@ function checkAndBlockUrl(details) {
 chrome.webNavigation.onCommitted.addListener((details) => {
     const tabId = details.tabId;
     const url = details.url;
-    const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
+    const blockedPageBaseUrl = chrome.runtime.getURL('src/pages/blocked.html');
 
     // Ignore self, non-http(s), and non-main frame navigations
     if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
@@ -214,7 +214,7 @@ chrome.webNavigation.onCommitted.addListener((details) => {
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     const tabId = details.tabId;
     const url = details.url;
-    const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
+    const blockedPageBaseUrl = chrome.runtime.getURL('src/pages/blocked.html');
 
     // Ignore self, non-http(s), and non-main frame navigations
     if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
@@ -246,7 +246,7 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 // chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 //   // Check only when loading is complete and URL is present and not the blocked page
 //   if (changeInfo.status === 'complete' && tab.url && tab.url.startsWith('http')) {
-//      const blockedPageBaseUrl = chrome.runtime.getURL('blocked.html');
+//      const blockedPageBaseUrl = chrome.runtime.getURL('src/pages/blocked.html');
 //      if (tab.url.startsWith(blockedPageBaseUrl)) {
 //          return; // Don't re-evaluate the blocked page
 //      }
