@@ -147,10 +147,11 @@
            <div class="form-group">
              <label for="biliUidInput">添加UP主UID到白名单</label>
              <p class="setting-description">即使B站被限制，白名单中的UP主主页 (space.bilibili.com/{UID}) 仍可访问。</p>
-             <div class="input-group">
-               <input type="text" id="biliUidInput" placeholder="输入B站用户UID">
-               <button id="addBiliUidButton">添加</button>
-             </div>
+<div class="input-group">
+  <input type="text" id="biliUidInput" placeholder="输入B站用户UID">
+  <input type="text" id="biliNoteInput" placeholder="备注（可选）" style="margin-left:5px; flex:1;">
+  <button id="addBiliUidButton">添加</button>
+</div>
              <div class="url-list" style="margin-top: 10px;">
                <h4>白名单列表：</h4>
                <ul id="biliUidList"></ul>

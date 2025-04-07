@@ -50,8 +50,9 @@ function shouldBlockUrl(url, callback) {
   if (biliSpaceMatch) {
     const uid = biliSpaceMatch[1];
     chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-      const whitelist = result[BILI_WHITELIST_KEY] || [];
-      if (whitelist.includes(uid)) {
+      let whitelist = result[BILI_WHITELIST_KEY] || [];
+      whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
+      if (whitelist.some(entry => entry.uid === uid)) {
         callback(false); // Whitelisted space page, don't block
         return;
       }
@@ -456,19 +457,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       delete tabsPendingUidCheck[tabId]; // Processed this tab
 
       chrome.storage.sync.get([BILI_WHITELIST_KEY], (result) => {
-        const whitelist = result[BILI_WHITELIST_KEY] || [];
-        if (whitelist.includes(receivedUid)) {
+        let whitelist = result[BILI_WHITELIST_KEY] || [];
+        whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
+        if (whitelist.some(entry => entry.uid === receivedUid)) {
           console.log(`Bilibili Whitelist: UID ${receivedUid} is whitelisted. Allowing tab ${tabId}.`);
-          // UID is whitelisted, allow navigation. Start timer if needed.
           if (!visitStartTimes[tabId]) {
              visitStartTimes[tabId] = Date.now();
           }
-          sendResponse({ allowed: true }); // Optional: respond to content script
+          sendResponse({ allowed: true });
         } else {
           console.log(`Bilibili Whitelist: UID ${receivedUid} not in whitelist. Blocking tab ${tabId}.`);
-          // UID not whitelisted, block the page
           blockPage(tabId);
-          sendResponse({ allowed: false }); // Optional: respond to content script
+          sendResponse({ allowed: false });
         }
       });
       return true; // Keep channel open for async response to storage.get

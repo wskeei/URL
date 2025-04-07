@@ -466,21 +466,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function loadBiliUidWhitelist() {
     chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-      const whitelist = result[BILI_WHITELIST_KEY] || [];
-      biliUidList.innerHTML = ''; // Clear current list
+      let whitelist = result[BILI_WHITELIST_KEY] || [];
+      // 兼容旧数据：字符串转对象
+      whitelist = whitelist.map(item => {
+        if (typeof item === 'string') {
+          return { uid: item, note: '' };
+        } else {
+          return item;
+        }
+      });
+      biliUidList.innerHTML = '';
 
-      whitelist.forEach(uid => {
+      whitelist.forEach(entry => {
         const li = document.createElement('li');
         li.innerHTML = `
           <div class="url-item">
-            <span class="url-text">${uid}</span>
-            <button class="delete-btn bili-delete-btn" data-uid="${uid}">删除</button>
+            <a href="https://space.bilibili.com/${entry.uid}" target="_blank" class="url-text">${entry.uid}</a>
+            <span class="note-text" style="margin-left:5px;color:#888;">${entry.note ? entry.note : ''}</span>
+            <button class="delete-btn bili-delete-btn" data-uid="${entry.uid}">删除</button>
           </div>
         `;
         biliUidList.appendChild(li);
       });
 
-      // Add event listeners to new delete buttons
+      // 保存升级后的对象数组
+      chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist });
+
       document.querySelectorAll('.bili-delete-btn').forEach(button => {
         button.addEventListener('click', function() {
           const uidToDelete = this.getAttribute('data-uid');
@@ -492,19 +503,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function addBiliUid() {
     const uid = biliUidInput.value.trim();
-    // Basic validation: check if it's a non-empty string of digits
+    const noteInput = document.getElementById('biliNoteInput');
+    const note = noteInput ? noteInput.value.trim() : '';
+
     if (uid && /^\d+$/.test(uid)) {
       chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-        const whitelist = result[BILI_WHITELIST_KEY] || [];
-        if (!whitelist.includes(uid)) {
-          whitelist.push(uid);
+        let whitelist = result[BILI_WHITELIST_KEY] || [];
+        // 兼容旧数据
+        whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
+
+        if (!whitelist.some(entry => entry.uid === uid)) {
+          whitelist.push({ uid, note });
           chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist }, function() {
             if (chrome.runtime.lastError) {
               console.error("Error saving Bili UID:", chrome.runtime.lastError);
               alert('添加UID失败，请重试。');
             } else {
-              loadBiliUidWhitelist(); // Refresh the list
-              biliUidInput.value = ''; // Clear input
+              loadBiliUidWhitelist();
+              biliUidInput.value = '';
+              if (noteInput) noteInput.value = '';
             }
           });
         } else {
@@ -520,13 +537,14 @@ document.addEventListener('DOMContentLoaded', function() {
   function deleteBiliUid(uidToDelete) {
     chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
       let whitelist = result[BILI_WHITELIST_KEY] || [];
-      whitelist = whitelist.filter(uid => uid !== uidToDelete);
+      whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
+      whitelist = whitelist.filter(entry => entry.uid !== uidToDelete);
       chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist }, function() {
         if (chrome.runtime.lastError) {
           console.error("Error deleting Bili UID:", chrome.runtime.lastError);
           alert('删除UID失败，请重试。');
         } else {
-          loadBiliUidWhitelist(); // Refresh the list
+          loadBiliUidWhitelist();
         }
       });
     });

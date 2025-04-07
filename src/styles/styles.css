@@ -858,3 +858,24 @@ textarea:focus {
 .duration-options input[type="radio"] {
   cursor: pointer;
 }
+
+/* 修复B站白名单输入区域布局 */
+.input-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#biliUidInput {
+  flex: 0 0 100px;
+  min-width: 80px;
+}
+
+#biliNoteInput {
+  flex: 1 1 auto;
+  min-width: 100px;
+}
+
+#addBiliUidButton {
+  flex: 0 0 auto;
+}
