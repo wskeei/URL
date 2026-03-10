@@ -1,3 +1,17 @@
+importScripts('bili_whitelist_utils.js');
+importScripts('url_match_utils.js');
+
+const biliUtils = self.BiliWhitelistUtils || {};
+const normalizeBiliWhitelist = biliUtils.normalizeBiliWhitelist || ((list) => Array.isArray(list) ? list : []);
+const isUploaderWhitelisted = biliUtils.isUploaderWhitelisted || (() => false);
+const extractBiliVideoId = biliUtils.extractBiliVideoId || (() => null);
+const urlMatchUtils = self.UrlMatchUtils || {};
+const normalizeBlockedRule = urlMatchUtils.normalizeBlockedRule || ((rule) => String(rule || '').trim());
+const doesUrlMatchRule = urlMatchUtils.doesUrlMatchRule || ((targetUrl, rule) => String(targetUrl || '').includes(String(rule || '')));
+const BACKGROUND_BUILD_ID = '2026-03-10-spa-history-fix-v4';
+
+console.log(`[FocusGuard] Background loaded. build=${BACKGROUND_BUILD_ID}, version=${chrome.runtime.getManifest().version}`);
+
 let focusMode = {
   active: false,
   endTime: null,
@@ -16,7 +30,7 @@ const BILI_WHITELIST_KEY = 'biliUidWhitelist'; // Array of strings (UIDs)
 let temporaryAccess = {};
 // 存储当前挑战 { url: { challenge: string, duration: number } }
 let currentChallenges = {};
-// 存储等待内容脚本UID检查的标签页 { tabId: boolean }
+// 存储等待B站视频UP主校验的标签页 { tabId: { url: string, createdAt: number } }
 let tabsPendingUidCheck = {};
 
 // --- Utility Functions ---
@@ -35,6 +49,132 @@ function generateChallengeString(length) {
   return result;
 }
 
+function checkFocusMode() {
+  if (!focusMode || !focusMode.active) {
+    return;
+  }
+
+  if (Date.now() >= focusMode.endTime) {
+    focusMode.active = false;
+    chrome.storage.sync.set({ focusMode }, () => {
+      if (chrome.runtime.lastError) {
+        console.error('Error updating expired focus mode:', chrome.runtime.lastError);
+      }
+    });
+  }
+}
+
+function setPendingBiliCheck(tabId, url) {
+  clearPendingBiliCheck(tabId);
+  const timeoutId = setTimeout(() => {
+    if (isPendingBiliCheck(tabId, url)) {
+      console.warn(`Bilibili Whitelist: Uploader check timeout on tab ${tabId}, blocking by default.`);
+      clearPendingBiliCheck(tabId);
+      blockPage(tabId);
+    }
+  }, 3500);
+  tabsPendingUidCheck[tabId] = { url, createdAt: Date.now(), timeoutId };
+}
+
+function clearPendingBiliCheck(tabId) {
+  const pending = tabsPendingUidCheck[tabId];
+  if (pending && pending.timeoutId) {
+    clearTimeout(pending.timeoutId);
+  }
+  delete tabsPendingUidCheck[tabId];
+}
+
+function isPendingBiliCheck(tabId, url) {
+  const pending = tabsPendingUidCheck[tabId];
+  if (!pending) {
+    return false;
+  }
+  if (!url || !pending.url) {
+    return true;
+  }
+  return pending.url === url;
+}
+
+function getBiliWhitelist(callback) {
+  chrome.storage.sync.get([BILI_WHITELIST_KEY], (result) => {
+    callback(normalizeBiliWhitelist(result[BILI_WHITELIST_KEY] || []));
+  });
+}
+
+function fetchBiliUploaderInfoByVideoUrl(url) {
+  const videoId = extractBiliVideoId(url);
+  if (!videoId) {
+    return Promise.resolve(null);
+  }
+
+  const query = videoId.type === 'bvid'
+    ? `bvid=${encodeURIComponent(videoId.id)}`
+    : `aid=${encodeURIComponent(videoId.id)}`;
+  const apiUrl = `https://api.bilibili.com/x/web-interface/view?${query}`;
+
+  return fetch(apiUrl, { method: 'GET', cache: 'no-store', credentials: 'omit' })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      if (!payload || payload.code !== 0 || !payload.data || !payload.data.owner) {
+        return null;
+      }
+      const owner = payload.data.owner;
+      const uid = owner.mid ? String(owner.mid) : '';
+      const name = owner.name ? String(owner.name).trim() : '';
+      if (!uid && !name) {
+        return null;
+      }
+      return { uid, name };
+    })
+    .catch((error) => {
+      console.warn(`Bilibili Whitelist: Failed to fetch uploader info from API for ${url}:`, error);
+      return null;
+    });
+}
+
+function applyBiliWhitelistDecision(tabId, tabUrl, uploaderInfo, source, sendResponse) {
+  if (!isPendingBiliCheck(tabId, tabUrl)) {
+    return;
+  }
+
+  getBiliWhitelist((whitelist) => {
+    const allowed = isUploaderWhitelisted(whitelist, uploaderInfo);
+    clearPendingBiliCheck(tabId);
+
+    if (allowed) {
+      console.log(`Bilibili Whitelist: Uploader allowed (${source}) on tab ${tabId}.`);
+      if (!visitStartTimes[tabId]) {
+        visitStartTimes[tabId] = Date.now();
+      }
+    } else {
+      console.log(`Bilibili Whitelist: Uploader blocked (${source}) on tab ${tabId}.`);
+      blockPage(tabId);
+    }
+
+    if (typeof sendResponse === 'function') {
+      sendResponse({ allowed, source });
+    }
+  });
+}
+
+function startBiliVideoWhitelistCheck(tabId, url, trigger) {
+  console.log(`Bilibili Whitelist: Start uploader check (${trigger}) for tab ${tabId}: ${url}`);
+  setPendingBiliCheck(tabId, url);
+
+  fetchBiliUploaderInfoByVideoUrl(url).then((uploaderInfo) => {
+    if (!uploaderInfo) {
+      // API失败时等待 content script 兜底。
+      return;
+    }
+    applyBiliWhitelistDecision(tabId, url, uploaderInfo, 'api');
+  });
+}
+
 // 检查URL是否应该被阻止（用于非Bilibili视频页的初始检查）
 function shouldBlockUrl(url, callback) {
   // 1. 检查是否有临时访问权限 (Applies to all URLs)
@@ -49,9 +189,7 @@ function shouldBlockUrl(url, callback) {
   const biliSpaceMatch = url.match(/https?:\/\/space\.bilibili\.com\/(\d+)/);
   if (biliSpaceMatch) {
     const uid = biliSpaceMatch[1];
-    chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-      let whitelist = result[BILI_WHITELIST_KEY] || [];
-      whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
+    getBiliWhitelist((whitelist) => {
       if (whitelist.some(entry => entry.uid === uid)) {
         callback(false); // Whitelisted space page, don't block
         return;
@@ -82,13 +220,13 @@ function checkGeneralBlockingRules(url, callback) {
 
     // Check if the URL matches any enabled blocked URL pattern
     const isGenerallyBlocked = blockedUrls.some(item =>
-      item.enabled && url.includes(item.url) // Simple includes check
+      item.enabled && doesUrlMatchRule(url, item.url)
     );
 
     // Check if the URL matches any focus mode URL pattern
     const isFocusBlocked = focusModeData.active &&
                            Date.now() < focusModeData.endTime &&
-                           focusModeData.urls.some(blockedUrl => url.includes(blockedUrl)); // Simple includes check
+                           focusModeData.urls.some(blockedUrl => doesUrlMatchRule(url, blockedUrl));
 
     const shouldBlock = isGenerallyBlocked || isFocusBlocked;
 
@@ -121,10 +259,7 @@ function checkAndBlockUrl(details) {
     // Check if bilibili.com *would* be blocked by general rules
     checkGeneralBlockingRules(url, (wouldBeBlocked) => {
       if (wouldBeBlocked) {
-        // Don't block yet, mark for content script check
-        console.log(`Bilibili Whitelist: Marking tab ${tabId} (${url}) for UID check.`);
-        tabsPendingUidCheck[tabId] = true;
-        // Start visit timer here if not already started? Or wait until confirmed allowed? Let's wait.
+        startBiliVideoWhitelistCheck(tabId, url, 'legacy-check');
       } else {
         // Not blocked by general rules, allow navigation and start timer
         if (!visitStartTimes[tabId]) {
@@ -158,57 +293,51 @@ function checkAndBlockUrl(details) {
   });
 }
 
-// --- Revised onCommitted Listener ---
-// We need onCommitted to handle cases where the user navigates *away* from an allowed page
-// or potentially to catch the final URL after redirects.
+function handleMainFrameNavigation(details, source) {
+  const tabId = details.tabId;
+  const url = details.url;
+  const blockedPageBaseUrl = chrome.runtime.getURL('src/pages/blocked.html');
+
+  // Ignore self, non-http(s), and non-main frame navigations
+  if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
+    return;
+  }
+
+  // B站视频页：如果命中通用拦截，进入白名单校验流程。
+  if (url.includes('www.bilibili.com/video/')) {
+    checkGeneralBlockingRules(url, (wouldBeBlocked) => {
+      if (wouldBeBlocked) {
+        startBiliVideoWhitelistCheck(tabId, url, source);
+      } else if (!visitStartTimes[tabId]) {
+        visitStartTimes[tabId] = Date.now();
+      }
+    });
+    return;
+  }
+
+  // 非视频页：按原有规则拦截。
+  shouldBlockUrl(url, (shouldBlock) => {
+    if (shouldBlock) {
+      console.log(`Blocking tab ${tabId} (${url}) on ${source}.`);
+      if (visitStartTimes[tabId]) {
+        delete visitStartTimes[tabId];
+      }
+      blockPage(tabId);
+    } else if (!visitStartTimes[tabId]) {
+      visitStartTimes[tabId] = Date.now();
+    }
+  });
+}
+
+// onCommitted: full navigation/redirect paths.
 chrome.webNavigation.onCommitted.addListener((details) => {
-    const tabId = details.tabId;
-    const url = details.url;
-    const blockedPageBaseUrl = chrome.runtime.getURL('src/pages/blocked.html');
-
-    // Ignore self, non-http(s), and non-main frame navigations
-    if (url.startsWith(blockedPageBaseUrl) || !url.startsWith('http') || details.frameId !== 0) {
-      return;
-    }
-
-    // If navigating *away* from a page where timer was running, record stats
-    if (visitStartTimes[tabId]) {
-       // Check if the *new* URL should be blocked. If so, stop timer.
-       // This logic gets complex with redirects. Let's simplify:
-       // If a timer is running, and the new URL is NOT the blocked page,
-       // assume the user navigated away *before* being blocked.
-       // We need a better way to associate start time with the *specific* allowed URL.
-       // Let's postpone refining stat tracking for now and focus on blocking.
-
-       // If the new URL is the blocked page, the timer was likely stopped by checkAndBlockUrl.
-       // If the new URL is *not* the blocked page, and *not* a pending video check,
-       // maybe stop the timer? This needs more thought.
-    }
-
-    // If this is the final URL of a Bilibili video page that was pending check,
-    // the content script will handle it via messages.
-    // If it's *not* a video page, re-run the blocking check in case of redirects.
-    if (!url.includes('www.bilibili.com/video/')) {
-        shouldBlockUrl(url, (shouldBlock) => {
-            if (shouldBlock) {
-                console.log(`Blocking tab ${tabId} (${url}) on commit.`);
-                // Stop timer if running
-                if (visitStartTimes[tabId]) {
-                    // Save stats logic here (complex)
-                    delete visitStartTimes[tabId];
-                }
-                blockPage(tabId);
-            } else {
-                 // Ensure timer starts if not already running for this allowed URL
-                 if (!visitStartTimes[tabId]) {
-                    visitStartTimes[tabId] = Date.now();
-                 }
-            }
-        });
-    }
-    // If it IS a video page, do nothing here, wait for content script message.
-
+  handleMainFrameNavigation(details, 'navigation');
 }, { url: [{ urlMatches: 'https?://*/*' }], types: ["main_frame"] });
+
+// onHistoryStateUpdated: SPA route changes (B站侧栏推荐常见路径).
+chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
+  handleMainFrameNavigation(details, 'history-state');
+}, { url: [{ urlMatches: 'https?://*/*' }] });
 
 
 // Listen for navigation start (mainly to potentially stop timers)
@@ -232,10 +361,10 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
         delete visitStartTimes[tabId]; // Just delete timer for now
     }
 
-    // If navigating away from a page pending UID check, clear the pending state
+    // If navigating away from a page pending uploader check, clear the pending state
     if (tabsPendingUidCheck[tabId]) {
-        console.log(`Navigation started on tab ${tabId}, clearing pending UID check.`);
-        delete tabsPendingUidCheck[tabId];
+        console.log(`Navigation started on tab ${tabId}, clearing pending uploader check.`);
+        clearPendingBiliCheck(tabId);
     }
 
 }, { url: [{ urlMatches: 'https?://*/*' }], types: ["main_frame"] });
@@ -314,10 +443,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             tabs.forEach(tab => {
               if (tab.url && tab.url.includes(message.url)) {
                  // Re-evaluate blocking for this tab
-                 // If it's a video page, mark for check; otherwise, block directly
+                 // If it's a video page, run whitelist check; otherwise, block directly
                  if (tab.url.includes('www.bilibili.com/video/')) {
-                     console.log(`Bilibili Whitelist: Marking tab ${tab.id} (${tab.url}) for UID check due to focus list update.`);
-                     tabsPendingUidCheck[tab.id] = true;
+                     startBiliVideoWhitelistCheck(tab.id, tab.url, 'focus-update');
                  } else {
                      blockPage(tab.id);
                  }
@@ -448,46 +576,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // --- Messages from Content Script ---
 
-  if (message.type === 'BILIBILI_UID_FOUND') {
+  if (message.type === 'BILIBILI_UPLOADER_FOUND' || message.type === 'BILIBILI_UID_FOUND') {
     const tabId = sender?.tab?.id;
-    const receivedUid = message.uid;
+    const uploaderInfo = {
+      uid: message.uid || '',
+      name: message.name || ''
+    };
 
-    if (tabId && tabsPendingUidCheck[tabId]) {
-      console.log(`Bilibili Whitelist: Received UID ${receivedUid} from tab ${tabId}. Checking whitelist.`);
-      delete tabsPendingUidCheck[tabId]; // Processed this tab
-
-      chrome.storage.sync.get([BILI_WHITELIST_KEY], (result) => {
-        let whitelist = result[BILI_WHITELIST_KEY] || [];
-        whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
-        if (whitelist.some(entry => entry.uid === receivedUid)) {
-          console.log(`Bilibili Whitelist: UID ${receivedUid} is whitelisted. Allowing tab ${tabId}.`);
-          if (!visitStartTimes[tabId]) {
-             visitStartTimes[tabId] = Date.now();
-          }
-          sendResponse({ allowed: true });
-        } else {
-          console.log(`Bilibili Whitelist: UID ${receivedUid} not in whitelist. Blocking tab ${tabId}.`);
-          blockPage(tabId);
-          sendResponse({ allowed: false });
-        }
-      });
-      return true; // Keep channel open for async response to storage.get
-    } else {
-       console.log(`Bilibili Whitelist: Received UID ${receivedUid} from unexpected tab ${tabId}. Ignoring.`);
+    if (tabId && isPendingBiliCheck(tabId)) {
+      console.log(`Bilibili Whitelist: Received uploader info from content script for tab ${tabId}.`);
+      applyBiliWhitelistDecision(tabId, null, uploaderInfo, 'content-script', sendResponse);
+      return true; // Keep channel open for async response
     }
+
+    console.log(`Bilibili Whitelist: Received uploader info from unexpected tab ${tabId}. Ignoring.`);
   }
 
-  if (message.type === 'BILIBILI_UID_NOT_FOUND') {
-     const tabId = sender?.tab?.id;
-     if (tabId && tabsPendingUidCheck[tabId]) {
-        console.log(`Bilibili Whitelist: Content script could not find UID on tab ${tabId}. Blocking.`);
-        delete tabsPendingUidCheck[tabId]; // Processed this tab
-        blockPage(tabId); // Block because UID couldn't be verified
-        sendResponse({ allowed: false }); // Optional: respond to content script
-     } else {
-        console.log(`Bilibili Whitelist: Received UID_NOT_FOUND from unexpected tab ${tabId}. Ignoring.`);
-     }
-     return false; // Synchronous processing
+  if (message.type === 'BILIBILI_UPLOADER_NOT_FOUND' || message.type === 'BILIBILI_UID_NOT_FOUND') {
+    const tabId = sender?.tab?.id;
+    if (tabId && isPendingBiliCheck(tabId)) {
+      console.log(`Bilibili Whitelist: Content script could not verify uploader on tab ${tabId}. Blocking.`);
+      clearPendingBiliCheck(tabId);
+      blockPage(tabId);
+      sendResponse({ allowed: false, source: 'content-script-not-found' });
+      return false;
+    }
+    console.log(`Bilibili Whitelist: Received uploader-not-found from unexpected tab ${tabId}. Ignoring.`);
+    return false;
   }
 
   // Default: If message type not recognized, return false or undefined
@@ -550,7 +665,15 @@ scheduleCleanups();
 chrome.storage.sync.get(['focusMode'], function(result) { // Changed to sync storage based on popup.js
   if (result.focusMode) {
     focusMode = result.focusMode;
-    checkFocusMode();
+    if (typeof checkFocusMode === 'function') {
+      checkFocusMode();
+    } else {
+      console.error('checkFocusMode is unavailable; applying inline focus-mode expiry fallback.');
+      if (focusMode.active && Date.now() >= focusMode.endTime) {
+        focusMode.active = false;
+        chrome.storage.sync.set({ focusMode });
+      }
+    }
   }
 });
 
@@ -602,10 +725,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     // Save stats before deleting? Still complex.
     delete visitStartTimes[tabId];
   }
-  // Clear pending UID check if tab is closed
+  // Clear pending uploader check if tab is closed
   if (tabsPendingUidCheck[tabId]) {
-    console.log(`Tab ${tabId} removed, clearing pending UID check.`);
-    delete tabsPendingUidCheck[tabId];
+    console.log(`Tab ${tabId} removed, clearing pending uploader check.`);
+    clearPendingBiliCheck(tabId);
   }
 });
 

@@ -145,10 +145,10 @@
              <h3>Bilibili 白名单</h3>
            </div>
            <div class="form-group">
-             <label for="biliUidInput">添加UP主UID到白名单</label>
-             <p class="setting-description">即使B站被限制，白名单中的UP主主页 (space.bilibili.com/{UID}) 仍可访问。</p>
+             <label for="biliUidInput">添加UP主名称或UID到白名单</label>
+             <p class="setting-description">支持按名称或UID匹配视频UP主，名称录入更方便；若有UID会优先按UID精确匹配。</p>
 <div class="input-group">
-  <input type="text" id="biliUidInput" placeholder="输入B站用户UID">
+  <input type="text" id="biliUidInput" placeholder="输入UP主名称或UID">
   <input type="text" id="biliNoteInput" placeholder="备注（可选）" style="margin-left:5px; flex:1;">
   <button id="addBiliUidButton">添加</button>
 </div>
@@ -208,6 +208,8 @@
   </div>
   <!-- End Modal -->
 
+  <script src="../scripts/url_match_utils.js"></script>
+  <script src="../scripts/bili_whitelist_utils.js"></script>
   <script src="../scripts/popup.js"></script>
 </body>
 </html>

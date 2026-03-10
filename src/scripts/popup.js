@@ -13,6 +13,8 @@ document.addEventListener('DOMContentLoaded', function() {
   const blockMessage = document.getElementById('blockMessage');
   const saveMessage = document.getElementById('saveMessage');
   const requestTempAccessBtn = document.getElementById('requestTempAccessBtn');
+  const urlMatchUtils = window.UrlMatchUtils || {};
+  const normalizeBlockedRule = urlMatchUtils.normalizeBlockedRule || ((rule) => String(rule || '').trim());
 
   // Modal elements
   const tempAccessModal = document.getElementById('tempAccessModal');
@@ -59,13 +61,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // 添加新网址
   addButton.addEventListener('click', function() {
-    const url = urlInput.value.trim();
+    const rawInput = urlInput.value.trim();
+    const url = normalizeBlockedRule(rawInput);
     if (url) {
       chrome.storage.sync.get(['blockedUrls', 'focusMode'], function(result) {
         const blockedUrls = result.blockedUrls || [];
         const focusMode = result.focusMode || { active: false };
         
-        if (!blockedUrls.some(item => item.url === url)) {
+        if (!blockedUrls.some(item => normalizeBlockedRule(item.url) === url)) {
           blockedUrls.push({
             url: url,
             enabled: true
@@ -463,29 +466,53 @@ document.addEventListener('DOMContentLoaded', function() {
   // --- Bilibili Whitelist Logic ---
 
   const BILI_WHITELIST_KEY = 'biliUidWhitelist';
+  const whitelistUtils = window.BiliWhitelistUtils || {};
+  const normalizeBiliWhitelist = whitelistUtils.normalizeBiliWhitelist || ((list) => Array.isArray(list) ? list : []);
+  const createWhitelistEntry = whitelistUtils.createWhitelistEntry || (() => null);
+  const findDuplicateEntry = whitelistUtils.findDuplicateEntry || (() => null);
+
+  function escapeHtml(text) {
+    return String(text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
 
   function loadBiliUidWhitelist() {
     chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-      let whitelist = result[BILI_WHITELIST_KEY] || [];
-      // 兼容旧数据：字符串转对象
-      whitelist = whitelist.map(item => {
-        if (typeof item === 'string') {
-          return { uid: item, note: '' };
-        } else {
-          return item;
-        }
-      });
+      const whitelist = normalizeBiliWhitelist(result[BILI_WHITELIST_KEY] || []);
       biliUidList.innerHTML = '';
 
-      whitelist.forEach(entry => {
+      whitelist.forEach((entry, index) => {
+        const displayName = entry.name || entry.uid;
+        const noteText = entry.note ? ` ${entry.note}` : '';
+        const safeDisplayName = escapeHtml(displayName);
+        const safeNoteText = escapeHtml(noteText);
+        const secondaryText = entry.uid && entry.name ? `UID: ${entry.uid}` : (entry.uid ? '' : '名称匹配');
+        const safeSecondaryText = escapeHtml(secondaryText);
+
         const li = document.createElement('li');
-        li.innerHTML = `
-          <div class="url-item">
-            <a href="https://space.bilibili.com/${entry.uid}" target="_blank" class="url-text">${entry.uid}</a>
-            <span class="note-text" style="margin-left:5px;color:#888;">${entry.note ? entry.note : ''}</span>
-            <button class="delete-btn bili-delete-btn" data-uid="${entry.uid}">删除</button>
-          </div>
-        `;
+        if (entry.uid) {
+          li.innerHTML = `
+            <div class="url-item">
+              <a href="https://space.bilibili.com/${entry.uid}" target="_blank" class="url-text">${safeDisplayName}</a>
+              ${secondaryText ? `<span class="note-text" style="margin-left:5px;color:#888;">${safeSecondaryText}</span>` : ''}
+              ${noteText ? `<span class="note-text" style="margin-left:5px;color:#888;">${safeNoteText}</span>` : ''}
+              <button class="delete-btn bili-delete-btn" data-index="${index}">删除</button>
+            </div>
+          `;
+        } else {
+          li.innerHTML = `
+            <div class="url-item">
+              <span class="url-text">${safeDisplayName}</span>
+              <span class="note-text" style="margin-left:5px;color:#888;">${safeSecondaryText}</span>
+              ${noteText ? `<span class="note-text" style="margin-left:5px;color:#888;">${safeNoteText}</span>` : ''}
+              <button class="delete-btn bili-delete-btn" data-index="${index}">删除</button>
+            </div>
+          `;
+        }
         biliUidList.appendChild(li);
       });
 
@@ -494,30 +521,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
       document.querySelectorAll('.bili-delete-btn').forEach(button => {
         button.addEventListener('click', function() {
-          const uidToDelete = this.getAttribute('data-uid');
-          deleteBiliUid(uidToDelete);
+          const indexToDelete = parseInt(this.getAttribute('data-index'), 10);
+          deleteBiliUid(indexToDelete);
         });
       });
     });
   }
 
   function addBiliUid() {
-    const uid = biliUidInput.value.trim();
+    const inputValue = biliUidInput.value.trim();
     const noteInput = document.getElementById('biliNoteInput');
     const note = noteInput ? noteInput.value.trim() : '';
+    const entry = createWhitelistEntry(inputValue, note);
 
-    if (uid && /^\d+$/.test(uid)) {
+    if (entry) {
       chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-        let whitelist = result[BILI_WHITELIST_KEY] || [];
-        // 兼容旧数据
-        whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
+        const whitelist = normalizeBiliWhitelist(result[BILI_WHITELIST_KEY] || []);
+        const duplicateType = findDuplicateEntry(whitelist, entry);
 
-        if (!whitelist.some(entry => entry.uid === uid)) {
-          whitelist.push({ uid, note });
+        if (!duplicateType) {
+          whitelist.push(entry);
           chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist }, function() {
             if (chrome.runtime.lastError) {
-              console.error("Error saving Bili UID:", chrome.runtime.lastError);
-              alert('添加UID失败，请重试。');
+              console.error("Error saving Bili whitelist entry:", chrome.runtime.lastError);
+              alert('添加白名单失败，请重试。');
             } else {
               loadBiliUidWhitelist();
               biliUidInput.value = '';
@@ -525,24 +552,27 @@ document.addEventListener('DOMContentLoaded', function() {
             }
           });
         } else {
-          alert('该UID已在白名单中。');
+          const tip = duplicateType === 'uid' ? '该UID已在白名单中。' : '该UP主名称已在白名单中。';
+          alert(tip);
           biliUidInput.value = '';
         }
       });
     } else {
-      alert('请输入有效的B站用户UID（纯数字）。');
+      alert('请输入有效的UP主名称或UID。');
     }
   }
 
-  function deleteBiliUid(uidToDelete) {
+  function deleteBiliUid(indexToDelete) {
     chrome.storage.sync.get([BILI_WHITELIST_KEY], function(result) {
-      let whitelist = result[BILI_WHITELIST_KEY] || [];
-      whitelist = whitelist.map(item => (typeof item === 'string' ? { uid: item, note: '' } : item));
-      whitelist = whitelist.filter(entry => entry.uid !== uidToDelete);
+      const whitelist = normalizeBiliWhitelist(result[BILI_WHITELIST_KEY] || []);
+      if (Number.isNaN(indexToDelete) || indexToDelete < 0 || indexToDelete >= whitelist.length) {
+        return;
+      }
+      whitelist.splice(indexToDelete, 1);
       chrome.storage.sync.set({ [BILI_WHITELIST_KEY]: whitelist }, function() {
         if (chrome.runtime.lastError) {
-          console.error("Error deleting Bili UID:", chrome.runtime.lastError);
-          alert('删除UID失败，请重试。');
+          console.error("Error deleting Bili whitelist entry:", chrome.runtime.lastError);
+          alert('删除白名单失败，请重试。');
         } else {
           loadBiliUidWhitelist();
         }

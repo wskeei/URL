@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "网页访问限制器",
-  "version": "1.0",
+  "version": "1.0.3",
   "description": "限制访问特定网页的Chrome插件",
   "permissions": [
     "storage",
     "webNavigation",
     "tabs"
+  ],
+  "host_permissions": [
+    "*://api.bilibili.com/*"
   ],
   "action": {
     "default_popup": "src/pages/popup.html"

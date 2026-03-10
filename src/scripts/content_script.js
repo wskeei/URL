@@ -1,47 +1,86 @@
 // content_script.js - Runs on www.bilibili.com/video/*
 
-function getUploaderUid() {
-  // Try finding the link to the uploader's space in common locations
-  // Selector might need adjustment if Bilibili changes layout
-  const spaceLinkSelectors = [
-    '.up-info .name', // Common layout
-    '.up-card-container .up-name', // Another possible layout
-    'a[href*="//space.bilibili.com/"]' // General fallback for links containing the space URL
+function extractUidFromHref(href) {
+  if (!href) {
+    return '';
+  }
+  const match = String(href).match(/space\.bilibili\.com\/(\d+)/);
+  return match && match[1] ? match[1] : '';
+}
+
+function pickNameFromElement(element) {
+  if (!element) {
+    return '';
+  }
+  const text = (element.textContent || '').trim();
+  if (text) {
+    return text;
+  }
+  const title = (element.getAttribute('title') || '').trim();
+  return title;
+}
+
+function getUploaderInfo() {
+  const selectors = [
+    '.up-info .name',
+    '.up-info--right .username',
+    '.up-card-container .up-name',
+    '.video-info-owner a[href*="space.bilibili.com"]',
+    'a[href*="//space.bilibili.com/"]'
   ];
 
-  for (const selector of spaceLinkSelectors) {
-    const linkElement = document.querySelector(selector);
-    if (linkElement && linkElement.href) {
-      const match = linkElement.href.match(/space\.bilibili\.com\/(\d+)/);
-      if (match && match[1]) {
-        console.log('Bilibili Whitelist: Found UID', match[1]);
-        return match[1];
-      }
+  let uid = '';
+  let name = '';
+
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (!element) {
+      continue;
+    }
+
+    if (!uid) {
+      uid = extractUidFromHref(element.getAttribute('href') || element.href || '');
+    }
+
+    if (!name) {
+      name = pickNameFromElement(element);
+    }
+
+    if (uid && name) {
+      break;
     }
   }
 
-  // Fallback if specific selectors fail, check meta tags (less reliable)
-  const metaOwner = document.querySelector('meta[itemprop="author"]');
-  if (metaOwner && metaOwner.content) {
-      // This might be the name, not UID - less ideal
-      console.log('Bilibili Whitelist: Found potential author name from meta:', metaOwner.content);
-      // Cannot reliably get UID from here in most cases.
+  if (!name) {
+    const metaOwner = document.querySelector('meta[itemprop="author"]');
+    if (metaOwner && metaOwner.content) {
+      name = String(metaOwner.content).trim();
+    }
   }
 
-  console.log('Bilibili Whitelist: Could not find uploader UID on page.');
-  return null;
+  if (!uid && !name) {
+    return null;
+  }
+
+  return { uid, name };
 }
 
-// Send the UID back to the background script
-// Use a small delay to ensure the page elements are likely loaded
 setTimeout(() => {
-  const uid = getUploaderUid();
-  if (uid) {
-    chrome.runtime.sendMessage({ type: 'BILIBILI_UID_FOUND', uid: uid })
-      .catch(error => console.error('Bilibili Whitelist: Error sending UID message:', error));
-  } else {
-    // Optionally send a message indicating UID not found, so background knows
-     chrome.runtime.sendMessage({ type: 'BILIBILI_UID_NOT_FOUND' })
-       .catch(error => console.error('Bilibili Whitelist: Error sending UID_NOT_FOUND message:', error));
+  const uploader = getUploaderInfo();
+
+  if (uploader) {
+    chrome.runtime.sendMessage({
+      type: 'BILIBILI_UPLOADER_FOUND',
+      uid: uploader.uid,
+      name: uploader.name
+    }).catch((error) => {
+      console.error('Bilibili Whitelist: Error sending uploader info:', error);
+    });
+    return;
   }
-}, 500); // 500ms delay, might need adjustment
+
+  chrome.runtime.sendMessage({ type: 'BILIBILI_UPLOADER_NOT_FOUND' })
+    .catch((error) => {
+      console.error('Bilibili Whitelist: Error sending uploader-not-found message:', error);
+    });
+}, 700);
